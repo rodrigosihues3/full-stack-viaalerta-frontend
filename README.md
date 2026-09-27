@@ -30,21 +30,6 @@ npm install
 npm run dev
 ```
 
-Una vez ejecutado, el sistema indicará la dirección local de acceso (habitualmente `http://localhost:5173`).
-
-### Otros Comandos Disponibles
-
-```bash
-# Generar la versión optimizada para producción (carpeta dist/)
-npm run build
-
-# Previsualizar localmente la compilación de producción
-npm run preview
-
-# Ejecutar el análisis estático de código (linter)
-npm run lint
-```
-
 ---
 
 ## 3. Tecnologías Utilizadas
