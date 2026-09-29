@@ -14,6 +14,72 @@ export const ENTITIES = {
   },
 };
 
+export const INITIAL_ENTITIES = [
+  {
+    id: "ENT-MML",
+    name: "Municipalidad Metropolitana de Lima",
+    acronym: "MML",
+    jurisdiction: "Vialidad Urbana y Redes Metropolitanas",
+    email: "operaciones@mml.gob.pe",
+    phone: "(01) 632-1300",
+    status: "OPERATIVO",
+  },
+  {
+    id: "ENT-SEDAPAL",
+    name: "Servicio de Agua Potable y Alcantarillado de Lima",
+    acronym: "SEDAPAL",
+    jurisdiction: "Redes Matrices de Agua y Alcantarillado",
+    email: "operaciones@sedapal.com.pe",
+    phone: "(01) 317-8000",
+    status: "OPERATIVO",
+  },
+];
+
+const ENTITIES_STORAGE_KEY = "via_alerta_entities";
+
+const readEntitiesStore = () => {
+  if (typeof window === "undefined") return [...INITIAL_ENTITIES];
+  try {
+    const savedEntities = window.localStorage.getItem(ENTITIES_STORAGE_KEY);
+    return savedEntities ? JSON.parse(savedEntities) : [...INITIAL_ENTITIES];
+  } catch {
+    return [...INITIAL_ENTITIES];
+  }
+};
+
+let entitiesStore = readEntitiesStore();
+
+const persistEntities = () => {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(ENTITIES_STORAGE_KEY, JSON.stringify(entitiesStore));
+  }
+};
+
+export const getEntities = () => [...entitiesStore];
+
+export const createEntity = ({ name, acronym, jurisdiction, email, phone }) => {
+  const normalizedAcronym = acronym.trim().toUpperCase().replace(/\s+/g, "-");
+  const baseId = `ENT-${normalizedAcronym}`;
+  let id = baseId;
+  let sequence = 2;
+  while (entitiesStore.some((entity) => entity.id === id)) {
+    id = `${baseId}-${sequence}`;
+    sequence += 1;
+  }
+  const entity = {
+    id,
+    name: name.trim(),
+    acronym: normalizedAcronym,
+    jurisdiction: jurisdiction.trim(),
+    email: email.trim().toLowerCase(),
+    phone: phone.trim(),
+    status: "OPERATIVO",
+  };
+  entitiesStore = [...entitiesStore, entity];
+  persistEntities();
+  return entity;
+};
+
 // Catálogo de categorías viales y mapeo determinista a la entidad responsable
 export const INCIDENT_CATEGORIES = [
   {

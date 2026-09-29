@@ -1,403 +1,660 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import { getIncidents, ENTITIES, INCIDENT_STATUS } from "../services/mockData";
 import {
-  ShieldAlert,
-  LogOut,
-  Search,
+  createEntity,
+  getEntities,
+  getIncidents,
+  INCIDENT_STATUS,
+} from "../services/mockData";
+import {
+  AlertTriangle,
   Building2,
-  Layers,
-  AlertCircle,
   CheckCircle2,
-  Clock,
+  ChevronLeft,
+  ChevronRight,
+  Cpu,
   ExternalLink,
-  MapPin,
-  TrendingUp,
-  FileSpreadsheet,
+  FileText,
+  Filter,
+  Layers,
+  LogOut,
+  Plus,
+  Search,
+  ShieldCheck,
+  X,
 } from "lucide-react";
+
+const PAGE_SIZE = 6;
+const emptyForm = {
+  name: "",
+  acronym: "",
+  jurisdiction: "",
+  email: "",
+  phone: "",
+};
+const severityBadge = (value) =>
+  value === "Critica"
+    ? "bg-red-50 text-red-700 border-red-200"
+    : value === "Alta"
+      ? "bg-amber-50 text-amber-700 border-amber-200"
+      : "bg-blue-50 text-blue-700 border-blue-200";
 
 export const AdminDashboardPage = () => {
   const { user, logout } = useAuth();
+  const [incidents] = useState(getIncidents);
+  const [entities, setEntities] = useState(getEntities);
+  const [tab, setTab] = useState("consolidated");
+  const [query, setQuery] = useState("");
+  const [entityId, setEntityId] = useState("TODAS");
+  const [status, setStatus] = useState("TODOS");
+  const [page, setPage] = useState(1);
+  const [selected, setSelected] = useState(null);
+  const [showRegister, setShowRegister] = useState(false);
+  const [form, setForm] = useState(emptyForm);
+  const [error, setError] = useState("");
+  const resetPage = (handler) => (event) => {
+    handler(event);
+    setPage(1);
+  };
 
-  // Consulta de todo el universo metropolitano de incidentes
-  const [allIncidents] = useState(() => getIncidents());
-  const [activeTab, setActiveTab] = useState("incidentes"); // 'incidentes' | 'entidades'
-  const [selectedEntityFilter, setSelectedEntityFilter] = useState("TODAS");
-  const [searchTerm, setSearchTerm] = useState("");
-
-  // Métricas metropolitanas agregadas
-  const totalMetropolitano = allIncidents.length;
-  const mmlCount = allIncidents.filter((i) => i.entityId === "ENT-MML").length;
-  const sedapalCount = allIncidents.filter(
-    (i) => i.entityId === "ENT-SEDAPAL",
-  ).length;
-  const criticosCount = allIncidents.filter(
-    (i) => i.severity === "Critica",
-  ).length;
-  const resueltosCount = allIncidents.filter(
-    (i) => i.status === "RESUELTO",
-  ).length;
-  const tasaResolucion =
-    totalMetropolitano > 0
-      ? Math.round((resueltosCount / totalMetropolitano) * 100)
-      : 0;
-
-  // Filtrado compuesto para la consola central
-  const filteredIncidents = allIncidents.filter((item) => {
-    const matchesEntity =
-      selectedEntityFilter === "TODAS" ||
-      item.entityId === selectedEntityFilter;
-    const matchesSearch =
-      item.ticketNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.district.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.categoryName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.entityName.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesEntity && matchesSearch;
-  });
+  const metrics = useMemo(() => {
+    const count = (id) =>
+      incidents.filter((item) => item.entityId === id).length;
+    const total = incidents.length;
+    return {
+      total,
+      mml: count("ENT-MML"),
+      sedapal: count("ENT-SEDAPAL"),
+      critical: incidents.filter((item) => item.severity === "Critica").length,
+      effectiveness: total
+        ? Math.round(
+            (incidents.filter((item) => item.status === "RESUELTO").length /
+              total) *
+              100,
+          )
+        : 0,
+    };
+  }, [incidents]);
+  const filtered = useMemo(
+    () =>
+      incidents.filter((item) => {
+        const term = query.trim().toLowerCase();
+        const matchesText =
+          !term ||
+          [
+            item.ticketNumber,
+            item.categoryName,
+            item.address,
+            item.district,
+          ].some((value) => value.toLowerCase().includes(term));
+        return (
+          matchesText &&
+          (entityId === "TODAS" || item.entityId === entityId) &&
+          (status === "TODOS" || item.status === status)
+        );
+      }),
+    [entityId, incidents, query, status],
+  );
+  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const rows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const handleRegister = (event) => {
+    event.preventDefault();
+    if (Object.values(form).some((value) => !value.trim())) {
+      setError("Complete todos los campos institucionales.");
+      return;
+    }
+    setEntities((current) => [...current, createEntity(form)]);
+    setForm(emptyForm);
+    setError("");
+    setShowRegister(false);
+  };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
-      {/* Cabecera Centralizada */}
-      <header className="bg-[#081D30] text-white px-6 py-3.5 flex items-center justify-between border-b border-slate-800 shadow-md">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-amber-500 rounded-lg text-slate-950">
-            <ShieldAlert size={22} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-base font-bold tracking-tight">
-                VíaAlerta Consola Central
-              </h1>
-              <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded border border-amber-500/40 font-semibold uppercase">
-                Super Administrador
-              </span>
-            </div>
-            <p className="text-xs text-slate-300 font-medium">
-              Fiscalización y Gobernanza Metropolitana
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4">
-          <div className="text-right hidden sm:block">
-            <span className="text-xs font-bold block">{user?.name}</span>
-            <span className="text-[10px] text-slate-400 font-mono">
-              Control Maestro
+    <div className="min-h-screen bg-slate-100 font-sans text-slate-700">
+      <header className="h-16 border-b border-slate-800 bg-[#081D30] px-4 text-white sm:px-6">
+        <div className="mx-auto flex h-full max-w-7xl items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="rounded-lg bg-amber-500 p-2 text-slate-950">
+              <ShieldCheck size={20} />
             </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-sm font-bold">
+                  Consola Central Metropolitana
+                </h1>
+                <span className="rounded border border-amber-500/40 bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-300">
+                  Super Administrador
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-300">
+                Supervisión operativa y gobernanza institucional
+              </p>
+            </div>
           </div>
-          <button
-            onClick={logout}
-            title="Cerrar Sesión"
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-red-700 text-slate-200 hover:text-white text-xs font-medium rounded border border-slate-700 transition"
-          >
-            <LogOut size={14} />
-            <span className="hidden sm:inline">Cerrar Sesión</span>
-          </button>
+          <div className="flex items-center gap-3">
+            <div className="hidden text-right sm:block">
+              <p className="text-xs font-bold">{user?.name}</p>
+              <p className="font-mono text-[10px] text-slate-400">
+                {user?.email}
+              </p>
+            </div>
+            <button
+              onClick={logout}
+              className="inline-flex items-center gap-1.5 rounded border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-bold text-slate-200 hover:bg-red-700 hover:text-white"
+            >
+              <LogOut size={14} />
+              Cerrar Sesión
+            </button>
+          </div>
         </div>
       </header>
-
-      {/* Contenedor Principal */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
-        {/* Métricas Agregadas de Lima Metropolitana */}
-        <section className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
-          <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-2xs">
-            <div className="flex items-center justify-between text-slate-500 mb-1.5">
-              <span className="text-[11px] font-bold uppercase tracking-wider">
-                Metropolitano
-              </span>
-              <Layers size={16} className="text-slate-400" />
-            </div>
-            <p className="text-2xl font-bold text-slate-800">
-              {totalMetropolitano}
-            </p>
-            <span className="text-[10px] text-slate-400">
-              Total reportes en Lima
-            </span>
-          </div>
-
-          <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-2xs">
-            <div className="flex items-center justify-between text-blue-600 mb-1.5">
-              <span className="text-[11px] font-bold uppercase tracking-wider">
-                Carga MML
-              </span>
-              <Building2 size={16} />
-            </div>
-            <p className="text-2xl font-bold text-slate-800">{mmlCount}</p>
-            <span className="text-[10px] text-slate-400">
-              Infraestructura vial
-            </span>
-          </div>
-
-          <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-2xs">
-            <div className="flex items-center justify-between text-cyan-600 mb-1.5">
-              <span className="text-[11px] font-bold uppercase tracking-wider">
-                Carga Sedapal
-              </span>
-              <Building2 size={16} />
-            </div>
-            <p className="text-2xl font-bold text-slate-800">{sedapalCount}</p>
-            <span className="text-[10px] text-slate-400">Redes sanitarias</span>
-          </div>
-
-          <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-2xs">
-            <div className="flex items-center justify-between text-red-600 mb-1.5">
-              <span className="text-[11px] font-bold uppercase tracking-wider">
-                Peligro Crítico
-              </span>
-              <AlertCircle size={16} />
-            </div>
-            <p className="text-2xl font-bold text-red-600">{criticosCount}</p>
-            <span className="text-[10px] text-slate-400">
-              Riesgo vital expuesto
-            </span>
-          </div>
-
-          <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-2xs col-span-2 md:col-span-1">
-            <div className="flex items-center justify-between text-emerald-600 mb-1.5">
-              <span className="text-[11px] font-bold uppercase tracking-wider">
-                Efectividad
-              </span>
-              <TrendingUp size={16} />
-            </div>
-            <p className="text-2xl font-bold text-slate-800">
-              {tasaResolucion}%
-            </p>
-            <span className="text-[10px] text-slate-400">
-              Tasa de resolución
-            </span>
-          </div>
-        </section>
-
-        {/* Pestañas de Vista */}
-        <div className="flex border-b border-slate-200 bg-white rounded-t-lg px-4 pt-2">
-          <button
-            onClick={() => setActiveTab("incidentes")}
-            className={`py-2.5 px-4 text-xs font-bold uppercase tracking-wider transition border-b-2 flex items-center gap-2 ${
-              activeTab === "incidentes"
-                ? "border-[#081D30] text-[#081D30]"
-                : "border-transparent text-slate-400 hover:text-slate-700"
-            }`}
-          >
-            <FileSpreadsheet size={16} />
-            Consolidado Metropolitano ({filteredIncidents.length})
-          </button>
-          <button
-            onClick={() => setActiveTab("entidades")}
-            className={`py-2.5 px-4 text-xs font-bold uppercase tracking-wider transition border-b-2 flex items-center gap-2 ${
-              activeTab === "entidades"
-                ? "border-[#081D30] text-[#081D30]"
-                : "border-transparent text-slate-400 hover:text-slate-700"
-            }`}
-          >
-            <Building2 size={16} />
-            Directorio de Entidades Públicas (2)
-          </button>
-        </div>
-
-        {/* Contenido Según Pestaña Activa */}
-        {activeTab === "incidentes" ? (
-          <section className="bg-white rounded-b-lg border-x border-b border-slate-200 shadow-2xs overflow-hidden">
-            {/* Filtros de Entidad y Búsqueda */}
-            <div className="p-4 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50/50">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-slate-500 uppercase mr-1">
-                  Filtrar Entidad:
+      <main className="max-w-7xl mx-auto w-full p-4 sm:p-6 space-y-5">
+        <section className="grid grid-cols-2 gap-3 md:grid-cols-5">
+          {[
+            [
+              "Carga Total Metropolitana",
+              metrics.total,
+              "Expedientes consolidados",
+              Layers,
+              "text-slate-500",
+            ],
+            [
+              "Asignados a MML",
+              metrics.mml,
+              `${metrics.total ? Math.round((metrics.mml / metrics.total) * 100) : 0}% del total`,
+              Building2,
+              "text-blue-600",
+            ],
+            [
+              "Asignados a Sedapal",
+              metrics.sedapal,
+              `${metrics.total ? Math.round((metrics.sedapal / metrics.total) * 100) : 0}% del total`,
+              Building2,
+              "text-cyan-600",
+            ],
+            [
+              "Alertas Críticas Activas",
+              metrics.critical,
+              "Severidad crítica",
+              AlertTriangle,
+              "text-red-600",
+            ],
+            [
+              "Tasa de Efectividad Global",
+              `${metrics.effectiveness}%`,
+              "Casos resueltos",
+              CheckCircle2,
+              "text-emerald-600",
+            ],
+          ].map(([label, value, note, Icon, color]) => (
+            <article
+              key={label}
+              className="rounded-lg border border-slate-200 bg-white p-3.5 shadow-2xs"
+            >
+              <div
+                className={`mb-2 flex items-center justify-between ${color}`}
+              >
+                <span className="text-[10px] font-bold uppercase tracking-wider">
+                  {label}
                 </span>
-                <button
-                  onClick={() => setSelectedEntityFilter("TODAS")}
-                  className={`px-3 py-1 text-xs font-semibold rounded transition ${
-                    selectedEntityFilter === "TODAS"
-                      ? "bg-[#081D30] text-white"
-                      : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
-                  }`}
-                >
-                  Todas ({totalMetropolitano})
-                </button>
-                <button
-                  onClick={() => setSelectedEntityFilter("ENT-MML")}
-                  className={`px-3 py-1 text-xs font-semibold rounded transition ${
-                    selectedEntityFilter === "ENT-MML"
-                      ? "bg-blue-600 text-white"
-                      : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
-                  }`}
-                >
-                  MML Obras ({mmlCount})
-                </button>
-                <button
-                  onClick={() => setSelectedEntityFilter("ENT-SEDAPAL")}
-                  className={`px-3 py-1 text-xs font-semibold rounded transition ${
-                    selectedEntityFilter === "ENT-SEDAPAL"
-                      ? "bg-cyan-600 text-white"
-                      : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
-                  }`}
-                >
-                  Sedapal ({sedapalCount})
-                </button>
+                <Icon size={16} />
               </div>
-
-              <div className="relative min-w-[280px]">
+              <p className="text-2xl font-bold text-slate-800">{value}</p>
+              <p className="text-[10px] text-slate-400">{note}</p>
+            </article>
+          ))}
+        </section>
+        <nav className="border-b border-slate-200 bg-white px-3">
+          <button
+            onClick={() => setTab("consolidated")}
+            className={`border-b-2 px-4 py-3 text-xs font-bold ${tab === "consolidated" ? "border-[#081D30] text-[#081D30]" : "border-transparent text-slate-400"}`}
+          >
+            Consolidado Metropolitano
+          </button>
+          <button
+            onClick={() => setTab("directory")}
+            className={`border-b-2 px-4 py-3 text-xs font-bold ${tab === "directory" ? "border-[#081D30] text-[#081D30]" : "border-transparent text-slate-400"}`}
+          >
+            Directorio de Entidades Públicas
+          </button>
+        </nav>
+        {tab === "consolidated" ? (
+          <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xs">
+            <div className="p-3 border-b border-slate-200 bg-slate-50/50 flex flex-col md:flex-row items-center gap-3">
+              <div className="relative flex-1 w-full">
                 <Search
-                  size={16}
-                  className="absolute inset-y-0 left-3 my-auto text-slate-400"
+                  size={15}
+                  className="absolute left-3 top-2.5 text-slate-400"
                 />
                 <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Buscar en toda Lima (ticket, distrito, avería)..."
-                  className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-[#081D30]"
+                  value={query}
+                  onChange={resetPage((event) => setQuery(event.target.value))}
+                  placeholder="Buscar ticket, avería, dirección o distrito"
+                  className="w-full rounded border border-slate-300 bg-white py-1.5 pl-9 pr-3 text-xs outline-none focus:ring-1 focus:ring-[#081D30]"
                 />
               </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Filter size={15} className="text-slate-400" />
+                <select
+                  value={entityId}
+                  onChange={resetPage((event) =>
+                    setEntityId(event.target.value),
+                  )}
+                  className="w-44 py-1.5 px-2.5 text-xs bg-white border border-slate-300 rounded"
+                >
+                  <option value="TODAS">Todas las Entidades</option>
+                  {entities.map((entity) => (
+                    <option key={entity.id} value={entity.id}>
+                      {entity.acronym}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={status}
+                  onChange={resetPage((event) => setStatus(event.target.value))}
+                  className="w-40 py-1.5 px-2.5 text-xs bg-white border border-slate-300 rounded"
+                >
+                  <option value="TODOS">Todos los Estados</option>
+                  {Object.entries(INCIDENT_STATUS).map(([key, item]) => (
+                    <option key={key} value={key}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-
-            {/* Tabla Consolidada */}
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-600">
-                <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[11px]">
+              <table className="w-full min-w-[940px] text-left text-xs">
+                <thead className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
                   <tr>
-                    <th className="py-3 px-4">Ticket</th>
-                    <th className="py-3 px-4">Entidad Responsable</th>
-                    <th className="py-3 px-4">Avería Reportada</th>
-                    <th className="py-3 px-4">Distrito</th>
-                    <th className="py-3 px-4 text-center">Severidad</th>
-                    <th className="py-3 px-4 text-center">Estado</th>
-                    <th className="py-3 px-4 text-right">Fecha</th>
+                    {[
+                      "Ticket",
+                      "Entidad asignada",
+                      "Categoría / Avería",
+                      "Ubicación / Distrito",
+                      "Severidad",
+                      "Estado",
+                      "Fecha",
+                      "Acción",
+                    ].map((heading) => (
+                      <th key={heading} className="px-4 py-3">
+                        {heading}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredIncidents.map((inc) => {
-                    const statusInfo =
-                      INCIDENT_STATUS[inc.status] || INCIDENT_STATUS.REGISTRADO;
-                    const isSedapal = inc.entityId === "ENT-SEDAPAL";
-                    return (
-                      <tr
-                        key={inc.id}
-                        className="hover:bg-slate-50/80 transition"
+                  {rows.length ? (
+                    rows.map((incident) => {
+                      const entity = entities.find(
+                        (item) => item.id === incident.entityId,
+                      );
+                      const incidentStatus =
+                        INCIDENT_STATUS[incident.status] ||
+                        INCIDENT_STATUS.REGISTRADO;
+                      return (
+                        <tr key={incident.id} className="hover:bg-slate-50">
+                          <td className="px-4 py-3 font-mono font-bold text-slate-800">
+                            {incident.ticketNumber}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="rounded border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-800">
+                              {entity?.acronym || incident.entityName}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 font-semibold text-slate-800">
+                            {incident.categoryName}
+                          </td>
+                          <td className="px-4 py-3">
+                            <p>{incident.district}</p>
+                            <p className="max-w-[180px] truncate text-[10px] text-slate-400">
+                              {incident.address}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`rounded border px-2 py-0.5 text-[10px] font-bold ${severityBadge(incident.severity)}`}
+                            >
+                              {incident.severity}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`rounded border px-2 py-0.5 text-[10px] font-bold ${incidentStatus.badge}`}
+                            >
+                              {incidentStatus.label}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 font-mono text-[10px] text-slate-500">
+                            {incident.createdAt}
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => setSelected(incident)}
+                              aria-label={`Inspeccionar ${incident.ticketNumber}`}
+                              className="rounded p-1 text-slate-500 hover:bg-blue-50 hover:text-blue-600"
+                            >
+                              <ExternalLink size={16} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td
+                        colSpan={8}
+                        className="px-4 py-12 text-center text-slate-400"
                       >
-                        <td className="py-3 px-4 font-mono font-bold text-slate-800">
-                          {inc.ticketNumber}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span
-                            className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${
-                              isSedapal
-                                ? "bg-cyan-50 text-cyan-800 border-cyan-200"
-                                : "bg-blue-50 text-blue-800 border-blue-200"
-                            }`}
-                          >
-                            {isSedapal ? "Sedapal" : "MML Obras"}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 font-medium text-slate-800">
-                          {inc.categoryName}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="font-semibold text-slate-700 block">
-                            {inc.district}
-                          </span>
-                          <span className="text-[10px] text-slate-400 truncate block max-w-xs">
-                            {inc.address}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <span
-                            className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
-                              inc.severity === "Critica"
-                                ? "bg-red-100 text-red-700 border border-red-200"
-                                : inc.severity === "Alta"
-                                  ? "bg-amber-100 text-amber-700 border border-amber-200"
-                                  : "bg-blue-100 text-blue-700 border border-blue-200"
-                            }`}
-                          >
-                            {inc.severity}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <span
-                            className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${statusInfo.badge}`}
-                          >
-                            {statusInfo.label}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-right text-slate-400 font-mono text-[11px]">
-                          {inc.createdAt}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                        <FileText size={28} className="mx-auto mb-2" />
+                        No se encontraron expedientes.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
-          </section>
-        ) : (
-          /* Directorio de Entidades Públicas Adscritas */
-          <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-2xs space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 bg-blue-100 text-blue-700 rounded-lg">
-                    <Building2 size={24} />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-800">
-                      {ENTITIES.MML.name}
-                    </h3>
-                    <span className="text-xs text-slate-400">
-                      Jurisdicción Provincial
-                    </span>
-                  </div>
-                </div>
-                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded border border-emerald-200">
-                  Activa
+            <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3 text-xs sm:flex-row sm:items-center sm:justify-between">
+              <span>
+                Mostrando {filtered.length ? (page - 1) * PAGE_SIZE + 1 : 0} a{" "}
+                {Math.min(page * PAGE_SIZE, filtered.length)} de{" "}
+                {filtered.length} expedientes
+              </span>
+              <div className="flex items-center gap-2">
+                <span>
+                  Página {page} de {pages}
                 </span>
-              </div>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Gestión técnica y mantenimiento de la capa asfáltica,
-                señalización horizontal y veredas peatonales en las arterias
-                principales de Lima.
-              </p>
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs font-mono text-slate-500">
-                <span>Operador: operador@mml.gob.pe</span>
-                <span className="font-bold text-blue-600">
-                  {mmlCount} casos asignados
-                </span>
+                <button
+                  disabled={page === 1}
+                  onClick={() => setPage((value) => value - 1)}
+                  className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2.5 py-1.5 font-bold disabled:opacity-40"
+                >
+                  <ChevronLeft size={14} />
+                  Anterior
+                </button>
+                <button
+                  disabled={page === pages}
+                  onClick={() => setPage((value) => value + 1)}
+                  className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2.5 py-1.5 font-bold disabled:opacity-40"
+                >
+                  Siguiente
+                  <ChevronRight size={14} />
+                </button>
               </div>
             </div>
-
-            <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-2xs space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 bg-cyan-100 text-cyan-700 rounded-lg">
-                    <Building2 size={24} />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-800">
-                      {ENTITIES.SEDAPAL.name}
-                    </h3>
-                    <span className="text-xs text-slate-400">
-                      Empresa Pública de Saneamiento
-                    </span>
-                  </div>
-                </div>
-                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded border border-emerald-200">
-                  Activa
-                </span>
+          </section>
+        ) : (
+          <section className="space-y-4">
+            <div className="flex flex-col justify-between gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-end">
+              <div>
+                <h2 className="text-base font-bold text-slate-800">
+                  Organizaciones Públicas Adscritas
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Catálogo institucional y capacidad operativa de la red
+                  metropolitana.
+                </p>
               </div>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Fiscalización y reparación de colectores de desagüe, reposición
-                de tapas de buzón sustraídas y control de fugas en tuberías
-                matrices.
-              </p>
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs font-mono text-slate-500">
-                <span>Operador: admin@sedapal.com.pe</span>
-                <span className="font-bold text-cyan-600">
-                  {sedapalCount} casos asignados
-                </span>
-              </div>
+              <button
+                onClick={() => setShowRegister(true)}
+                className="flex items-center gap-1.5 rounded-lg bg-[#081D30] px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-slate-800"
+              >
+                <Plus size={15} />
+                Registrar Entidad Pública
+              </button>
+            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {entities.map((entity) => {
+                const load = incidents.filter(
+                  (item) =>
+                    item.entityId === entity.id &&
+                    !["RESUELTO", "DESESTIMADO"].includes(item.status),
+                ).length;
+                return (
+                  <article
+                    key={entity.id}
+                    className="rounded-lg border border-slate-200 bg-white p-4 shadow-2xs"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex gap-2">
+                        <span className="rounded border border-blue-200 bg-blue-50 px-2 py-1 font-mono text-[11px] font-bold text-blue-800">
+                          {entity.acronym}
+                        </span>
+                        <h3 className="text-xs font-bold text-slate-800">
+                          {entity.name}
+                        </h3>
+                      </div>
+                      <span className="rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                        {entity.status}
+                      </span>
+                    </div>
+                    <p className="mt-4 border-l-2 border-slate-300 pl-2 text-xs">
+                      {entity.jurisdiction}
+                    </p>
+                    <div className="mt-4 space-y-1 border-t border-slate-100 pt-3 font-mono text-[11px] text-slate-600">
+                      <p>{entity.email}</p>
+                      <p>{entity.phone}</p>
+                    </div>
+                    <div className="mt-4 flex justify-between border-t border-slate-100 pt-3">
+                      <span className="text-[10px] font-bold uppercase text-slate-500">
+                        Carga operativa activa
+                      </span>
+                      <span className="text-sm font-bold text-[#081D30]">
+                        {load}
+                      </span>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           </section>
         )}
       </main>
+      {selected && (
+        <InspectionModal
+          incident={selected}
+          onClose={() => setSelected(null)}
+        />
+      )}
+      {showRegister && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/50 p-4">
+          <form
+            onSubmit={handleRegister}
+            className="w-[36rem] max-w-[calc(100vw-2rem)] shrink-0 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150"
+          >
+            <div className="flex items-center justify-between bg-[#081D30] p-4 text-white">
+              <div>
+                <h2 className="text-sm font-bold">Registrar Entidad Pública</h2>
+                <p className="text-[10px] text-slate-300">
+                  Alta institucional para asignación operativa.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRegister(false)}
+                aria-label="Cerrar registro"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-5 space-y-3.5">
+              <Field
+                label="Razón Social / Nombre Oficial"
+                field="name"
+                form={form}
+                setForm={setForm}
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <Field
+                  label="Sigla / Acrónimo"
+                  field="acronym"
+                  form={form}
+                  setForm={setForm}
+                />
+                <Field
+                  label="Central Telefónica de Emergencia"
+                  field="phone"
+                  form={form}
+                  setForm={setForm}
+                />
+              </div>
+              <Field
+                label="Competencia Técnica / Jurisdicción"
+                field="jurisdiction"
+                form={form}
+                setForm={setForm}
+              />
+              <Field
+                label="Correo Institucional de Despacho"
+                field="email"
+                type="email"
+                form={form}
+                setForm={setForm}
+              />
+              {error && <p className="text-xs text-red-700">{error}</p>}
+            </div>
+            <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowRegister(false)}
+                className="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-300 rounded hover:bg-slate-100"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="px-3.5 py-1.5 text-xs font-bold text-white bg-[#081D30] hover:bg-slate-800 rounded shadow-2xs"
+              >
+                Registrar Entidad
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 };
+
+const InspectionModal = ({ incident, onClose }) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+    <div className="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
+      <div className="flex items-center justify-between bg-[#081D30] p-4 text-white">
+        <div className="flex items-center gap-2">
+          <span className="rounded bg-blue-600 px-2 py-0.5 font-mono text-xs font-bold">
+            {incident.ticketNumber}
+          </span>
+          <h2 className="text-sm font-bold">
+            Inspección Técnica Metropolitana
+          </h2>
+        </div>
+        <button onClick={onClose}>
+          <X size={18} />
+        </button>
+      </div>
+      <div className="grid grid-cols-1 gap-5 overflow-y-auto p-5 md:grid-cols-12">
+        <div className="space-y-4 md:col-span-7">
+          <section className="rounded-lg border border-slate-200 p-4 shadow-2xs">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Cpu size={16} className="text-indigo-600" />
+                <h3 className="text-[10px] font-bold uppercase">
+                  Dictamen de triaje IA
+                </h3>
+              </div>
+              <span className="rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-800">
+                {incident.aiTriage?.confidence || "N/D"}
+              </span>
+            </div>
+            <div className="mt-3 space-y-2 rounded border border-slate-200 bg-slate-50 p-3 text-xs">
+              <p>
+                <strong>Avería identificada:</strong>{" "}
+                {incident.aiTriage?.detectedIssue || incident.categoryName}
+              </p>
+              <p>
+                <strong>Severidad computada:</strong>{" "}
+                {incident.aiTriage?.computedSeverity || incident.severity}
+              </p>
+              <p>
+                <strong>Recomendación:</strong>{" "}
+                {incident.aiTriage?.recommendation ||
+                  "Pendiente de evaluación técnica."}
+              </p>
+            </div>
+          </section>
+          <section className="rounded-lg border border-slate-200 p-4 shadow-2xs">
+            <h3 className="text-[10px] font-bold uppercase text-slate-500">
+              Expediente ciudadano
+            </h3>
+            <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <p className="font-bold">Ubicación física</p>
+                <p className="mt-1">{incident.address}</p>
+                <p className="text-slate-500">{incident.district}</p>
+              </div>
+              <div>
+                <p className="font-bold">Ciudadano reportante</p>
+                <p className="mt-1 font-mono">
+                  DNI {incident.citizenDni?.slice(0, 4)}****
+                </p>
+                <p className="text-emerald-700">Identidad verificada</p>
+              </div>
+            </div>
+            <div className="mt-3 flex justify-between border-t border-slate-100 pt-3">
+              <span className="font-mono text-[10px]">
+                {incident.lat}, {incident.lng}
+              </span>
+              <a
+                href={`https://maps.google.com/?q=${incident.lat},${incident.lng}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600"
+              >
+                Google Maps <ExternalLink size={12} />
+              </a>
+            </div>
+          </section>
+        </div>
+        <div className="md:col-span-5">
+          <section className="rounded-lg border border-slate-200 p-4 shadow-2xs">
+            <h3 className="mb-3 text-[10px] font-bold uppercase text-slate-500">
+              Evidencia visual
+            </h3>
+            {incident.photoUrl ? (
+              <>
+                <img
+                  src={incident.photoUrl}
+                  alt="Evidencia del incidente"
+                  className="h-52 w-full rounded-lg border border-slate-200 object-cover"
+                />
+                <p className="mt-2 font-mono text-[10px] text-slate-500">
+                  Captura: {incident.createdAt}
+                </p>
+              </>
+            ) : (
+              <div className="flex h-44 flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-slate-400">
+                <FileText size={26} />
+                <span className="mt-2 text-xs">
+                  Sin evidencia fotográfica adjunta
+                </span>
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+const Field = ({ label, field, type = "text", form, setForm }) => (
+  <label className="block text-xs font-bold text-slate-700">
+    {label}
+    <input
+      type={type}
+      value={form[field]}
+      onChange={(event) =>
+        setForm((current) => ({ ...current, [field]: event.target.value }))
+      }
+      className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-xs font-normal outline-none focus:ring-1 focus:ring-[#081D30]"
+    />
+  </label>
+);
