@@ -73,7 +73,7 @@ export const INCIDENT_STATUS = {
   },
   DESESTIMADO: {
     label: "Desestimado",
-    badge: "bg-red-100 text-red-800 border-red-300",
+    badge: "bg-rose-50 text-rose-700 border-rose-200",
   },
 };
 
@@ -98,6 +98,12 @@ export const INITIAL_INCIDENTS = [
       "Buzón de alcantarillado sin tapa en carril central. Peligro inminente de despiste vehicular.",
     photoUrl:
       "https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&q=80&w=400",
+    aiTriage: {
+      detectedIssue: "Buzón de alcantarillado sin tapa, con borde perimetral fracturado y riesgo de caída vehicular.",
+      confidence: "96.8%",
+      computedSeverity: "CRÍTICA",
+      recommendation: "Aislar el punto e instalar una tapa de seguridad provisional dentro de las próximas 12 horas.",
+    },
   },
   {
     id: "inc-102",
@@ -118,6 +124,12 @@ export const INITIAL_INCIDENTS = [
       "Hundimiento pronunciado de carpeta asfáltica de aprox. 1.2m de ancho tras obras no compactadas.",
     photoUrl:
       "https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?auto=format&fit=crop&q=80&w=400",
+    aiTriage: {
+      detectedIssue: "Hundimiento de carpeta asfáltica con bordes desgranados de aprox. 1.10 m de diámetro.",
+      confidence: "94.2%",
+      computedSeverity: "ALTA",
+      recommendation: "Priorizar cuadrilla de compactación y bacheo en frío dentro de las próximas 48 horas.",
+    },
   },
   {
     id: "inc-103",
@@ -137,6 +149,12 @@ export const INITIAL_INCIDENTS = [
     description:
       "Rotura de tubería matriz generando aniego que cubre dos carriles de tránsito pesado.",
     photoUrl: null,
+    aiTriage: {
+      detectedIssue: "Fuga activa en red primaria con aniego sobre dos carriles de circulación.",
+      confidence: "91.6%",
+      computedSeverity: "CRÍTICA",
+      recommendation: "Desplegar cuadrilla de control hidráulico, señalizar la vía y ejecutar cierre de válvula de forma prioritaria.",
+    },
   },
   {
     id: "inc-104",
@@ -156,6 +174,12 @@ export const INITIAL_INCIDENTS = [
     description:
       "Vereda destruida impidiendo paso peatonal de adultos mayores frente a posta médica.",
     photoUrl: null,
+    aiTriage: {
+      detectedIssue: "Losas de vereda fracturadas con desnivel y pérdida de continuidad en la ruta peatonal.",
+      confidence: "88.4%",
+      computedSeverity: "MEDIA",
+      recommendation: "Programar reposición de losas y nivelación del área en la siguiente jornada de mantenimiento.",
+    },
   },
 ];
 
