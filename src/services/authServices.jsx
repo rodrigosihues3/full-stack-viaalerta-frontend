@@ -98,6 +98,49 @@ export const login = async (identifier, password) => {
   };
 };
 
+export const registerCitizen = async ({ dni, name, email, password }) => {
+  await new Promise((resolve) => setTimeout(resolve, 600));
+
+  const cleanDni = dni.trim();
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanName = name.trim();
+
+  if (!/^\d{8}$/.test(cleanDni)) {
+    throw new Error("El DNI debe contener exactamente 8 digitos numericos.");
+  }
+
+  if (MOCK_ACCOUNTS.some((account) => account.dni === cleanDni)) {
+    throw new Error("Ya existe una cuenta registrada con este DNI.");
+  }
+
+  const user = {
+    id: `usr-citizen-${Date.now()}`,
+    identifier: cleanDni,
+    dni: cleanDni,
+    email: cleanEmail,
+    password,
+    name: cleanName,
+    role: "CIUDADANO",
+    entityId: null,
+    entityName: null,
+  };
+
+  MOCK_ACCOUNTS.push(user);
+  const token = generateSyntheticJWT(user);
+  return {
+    token,
+    user: {
+      id: user.id,
+      dni: user.dni,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      entityId: user.entityId,
+      entityName: user.entityName,
+    },
+  };
+};
+
 export const getDemoAccounts = () => [
   {
     label: "Ciudadano (DNI)",

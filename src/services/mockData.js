@@ -44,6 +44,13 @@ export const INCIDENT_CATEGORIES = [
     iconName: "Droplets",
     defaultSeverity: "Alta",
   },
+  {
+    id: "CAT-05",
+    name: "Otros incidentes",
+    entityId: "ENT-MML",
+    iconName: "HelpCircle",
+    defaultSeverity: "Media",
+  },
 ];
 
 // Estados del ciclo de vida de trazabilidad
@@ -175,6 +182,16 @@ export const updateIncidentStatus = (id, newStatus) => {
 export const createIncident = async (newIncidentData) => {
   await new Promise((resolve) => setTimeout(resolve, 600)); // Latencia simulada
 
+  const category = INCIDENT_CATEGORIES.find(
+    (item) => item.id === newIncidentData.categoryId,
+  );
+  if (!category) {
+    throw new Error("La categoria del incidente no es valida.");
+  }
+
+  const entity = Object.values(ENTITIES).find(
+    (item) => item.id === category.entityId,
+  );
   const randomTicket = `TKT-2026-${Math.floor(1000 + Math.random() * 9000)}`;
   const createdIncident = {
     id: `inc-${Date.now()}`,
@@ -182,6 +199,11 @@ export const createIncident = async (newIncidentData) => {
     createdAt: new Date().toISOString().replace("T", " ").substring(0, 16),
     status: "REGISTRADO",
     ...newIncidentData,
+    categoryId: category.id,
+    categoryName: category.name,
+    entityId: entity.id,
+    entityName: entity.name,
+    severity: newIncidentData.severity || category.defaultSeverity,
   };
 
   incidentsStore.unshift(createdIncident);
