@@ -1,39 +1,64 @@
 import { Routes, Route, Navigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import { LoginPage } from "../pages/LoginPage";
+import { CitizenPortalPage } from "../pages/CitizenPortalPage";
+import { EntityDashboardPage } from "../pages/EntityDashboardPage";
+import { AdminDashboardPage } from "../pages/AdminDashboardPage";
 import { ProtectedRoute } from "../components/ProtectedRoute";
 
-// Vistas provisionales para verificar navegación
-const CitizenPlaceholder = () => (
-  <div className="p-6 max-w-lg mx-auto">
-    <h1 className="text-xl font-bold">Portal Ciudadano (VíaAlerta)</h1>
-    <p className="text-slate-600 mt-2">
-      Módulo de captura de incidentes viales.
-    </p>
-  </div>
-);
+const RootRouter = () => {
+  const { isAuthenticated, user, loading } = useAuth();
 
-const DashboardPlaceholder = () => (
-  <div className="p-6">
-    <h1 className="text-xl font-bold">Panel de Operaciones Municipal</h1>
-    <p className="text-slate-600 mt-2">
-      Vista protegida exclusiva para operadores autorizados.
-    </p>
-  </div>
-);
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-slate-900 text-white text-xs">
+        Cargando sistema...
+      </div>
+    );
+  }
+
+  // Muro de autenticación
+  if (!isAuthenticated || !user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  // Despacho determinista por rol
+  if (user.role === "OPERADOR_ENTIDAD") {
+    return <Navigate to="/entidad/dashboard" replace />;
+  }
+  if (user.role === "SUPER_ADMIN") {
+    return <Navigate to="/admin/dashboard" replace />;
+  }
+
+  return <CitizenPortalPage />;
+};
 
 export const AppRoutes = () => {
   return (
     <Routes>
-      <Route path="/" element={<CitizenPlaceholder />} />
+      <Route path="/" element={<RootRouter />} />
       <Route path="/login" element={<LoginPage />} />
+
+      {/* Panel Operativo de Entidades (MML y Sedapal) */}
       <Route
-        path="/dashboard"
+        path="/entidad/dashboard"
         element={
-          <ProtectedRoute>
-            <DashboardPlaceholder />
+          <ProtectedRoute allowedRoles={["OPERADOR_ENTIDAD"]}>
+            <EntityDashboardPage />
           </ProtectedRoute>
         }
       />
+
+      {/* Consola Central Super Administrador */}
+      <Route
+        path="/admin/dashboard"
+        element={
+          <ProtectedRoute allowedRoles={["SUPER_ADMIN"]}>
+            <AdminDashboardPage />
+          </ProtectedRoute>
+        }
+      />
+
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
