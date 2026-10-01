@@ -19,8 +19,8 @@ const MOCK_ACCOUNTS = [
     password: "Password123!",
     name: "Centro de Control Vial - Sede Central",
     role: "OPERADOR_ENTIDAD",
-    entityId: "ENT-MML",
-    entityName: "Municipalidad Metropolitana de Lima",
+    entityId: "ENT-MML-CERCADO",
+    entityName: "Municipalidad de Lima - Sede Cercado",
     jurisdiction: "Vialidad Metropolitana",
   },
   {
@@ -31,8 +31,8 @@ const MOCK_ACCOUNTS = [
     password: "Password123!",
     name: "Operaciones Técnicas - Sede Lima Centro",
     role: "OPERADOR_ENTIDAD",
-    entityId: "ENT-SEDAPAL",
-    entityName: "Sedapal S.A.",
+    entityId: "ENT-SEDAPAL-NORTE",
+    entityName: "Sedapal Norte",
     jurisdiction: "Saneamiento y Redes Primarias",
   },
   {

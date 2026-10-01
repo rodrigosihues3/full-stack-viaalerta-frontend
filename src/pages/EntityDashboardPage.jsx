@@ -117,11 +117,6 @@ export const EntityDashboardPage = () => {
               <h1 className="text-base font-bold tracking-tight">
                 VíaAlerta Operaciones
               </h1>
-              <span className="text-[10px] bg-blue-900/80 text-blue-200 px-2 py-0.5 rounded border border-blue-700 font-semibold uppercase">
-                {user?.entityId === "ENT-SEDAPAL"
-                  ? "Saneamiento"
-                  : "Vialidad Urbana"}
-              </span>
             </div>
             <p className="text-xs text-slate-300 font-medium">
               {user?.entityName}
@@ -132,9 +127,6 @@ export const EntityDashboardPage = () => {
         <div className="flex items-center gap-4">
           <div className="text-right hidden sm:block">
             <span className="text-xs font-bold block">{user?.name}</span>
-            <span className="text-[10px] text-slate-400 font-mono">
-              {user?.email}
-            </span>
             <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wide text-blue-200">
               Sede técnica ·{" "}
               {user?.jurisdiction || "Jurisdicción institucional"}
@@ -423,12 +415,9 @@ export const EntityDashboardPage = () => {
                         <Cpu size={17} />
                       </span>
                       <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
-                        Dictamen de triaje automático (IA)
+                        Evaluación automática (IA)
                       </h3>
                     </div>
-                    <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 font-mono text-[11px] font-bold px-2 py-0.5 rounded">
-                      Certeza: {selectedIncident.aiTriage?.confidence || "N/D"}
-                    </span>
                   </div>
                   <div className="mt-3 bg-slate-50 border border-slate-200 rounded p-3 text-xs space-y-1.5 text-slate-700">
                     <p>

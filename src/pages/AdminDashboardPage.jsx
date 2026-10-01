@@ -8,8 +8,6 @@ import {
 } from "../services/mockData";
 import {
   AlertTriangle,
-  Building2,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Cpu,
@@ -58,21 +56,16 @@ export const AdminDashboardPage = () => {
   };
 
   const metrics = useMemo(() => {
-    const count = (id) =>
-      incidents.filter((item) => item.entityId === id).length;
     const total = incidents.length;
+    const activeIncidents = incidents.filter(
+      (item) => !["RESUELTO", "DESESTIMADO"].includes(item.status),
+    );
     return {
       total,
-      mml: count("ENT-MML"),
-      sedapal: count("ENT-SEDAPAL"),
-      critical: incidents.filter((item) => item.severity === "Critica").length,
-      effectiveness: total
-        ? Math.round(
-            (incidents.filter((item) => item.status === "RESUELTO").length /
-              total) *
-              100,
-          )
-        : 0,
+      high: incidents.filter((item) => item.severity === "Alta").length,
+      medium: incidents.filter((item) => item.severity === "Media").length,
+      critical: activeIncidents.filter((item) => item.severity === "Critica")
+        .length,
     };
   }, [incidents]);
   const filtered = useMemo(
@@ -110,46 +103,41 @@ export const AdminDashboardPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 font-sans text-slate-700">
-      <header className="h-16 border-b border-slate-800 bg-[#081D30] px-4 text-white sm:px-6">
-        <div className="mx-auto flex h-full max-w-7xl items-center justify-between gap-4">
+    <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
+      <header className="flex items-center justify-between border-b border-slate-800 bg-[#081D30] px-6 py-3.5 text-white shadow-md">
           <div className="flex items-center gap-3">
             <span className="rounded-lg bg-amber-500 p-2 text-slate-950">
               <ShieldCheck size={20} />
             </span>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-sm font-bold">
+                <h1 className="text-base font-bold tracking-tight">
                   Consola Central Metropolitana
                 </h1>
-                <span className="rounded border border-amber-500/40 bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-300">
-                  Super Administrador
-                </span>
               </div>
-              <p className="text-[10px] text-slate-300">
+              <p className="text-xs font-medium text-slate-300">
                 Supervisión operativa y gobernanza institucional
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             <div className="hidden text-right sm:block">
-              <p className="text-xs font-bold">{user?.name}</p>
-              <p className="font-mono text-[10px] text-slate-400">
+              <span className="block text-xs font-bold">{user?.name}</span>
+              <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wide text-blue-200">
                 {user?.email}
-              </p>
+              </span>
             </div>
             <button
               onClick={logout}
-              className="inline-flex items-center gap-1.5 rounded border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-bold text-slate-200 hover:bg-red-700 hover:text-white"
+              className="flex items-center gap-1.5 rounded border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-red-700 hover:text-white"
             >
               <LogOut size={14} />
               Cerrar Sesión
             </button>
           </div>
-        </div>
       </header>
-      <main className="max-w-7xl mx-auto w-full p-4 sm:p-6 space-y-5">
-        <section className="grid grid-cols-2 gap-3 md:grid-cols-5">
+      <main className="max-w-7xl mx-auto w-full p-4 sm:p-6 space-y-4">
+        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {[
             [
               "Carga Total Metropolitana",
@@ -159,18 +147,18 @@ export const AdminDashboardPage = () => {
               "text-slate-500",
             ],
             [
-              "Asignados a MML",
-              metrics.mml,
-              `${metrics.total ? Math.round((metrics.mml / metrics.total) * 100) : 0}% del total`,
-              Building2,
-              "text-blue-600",
+              "Prioridad Alta",
+              metrics.high,
+              "Atención prioritaria",
+              AlertTriangle,
+              "text-amber-600",
             ],
             [
-              "Asignados a Sedapal",
-              metrics.sedapal,
-              `${metrics.total ? Math.round((metrics.sedapal / metrics.total) * 100) : 0}% del total`,
-              Building2,
-              "text-cyan-600",
+              "Prioridad Media",
+              metrics.medium,
+              "Atención programable",
+              AlertTriangle,
+              "text-blue-600",
             ],
             [
               "Alertas Críticas Activas",
@@ -178,13 +166,6 @@ export const AdminDashboardPage = () => {
               "Severidad crítica",
               AlertTriangle,
               "text-red-600",
-            ],
-            [
-              "Tasa de Efectividad Global",
-              `${metrics.effectiveness}%`,
-              "Casos resueltos",
-              CheckCircle2,
-              "text-emerald-600",
             ],
           ].map(([label, value, note, Icon, color]) => (
             <article
