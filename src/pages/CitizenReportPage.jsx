@@ -14,7 +14,6 @@ import {
   Loader2,
   X,
   User,
-  ChevronRight,
 } from "lucide-react";
 import {
   INCIDENT_CATEGORIES,
@@ -136,7 +135,7 @@ export const CitizenReportPage = () => {
       setPhotoPreview(null);
     } catch (err) {
       setErrorMsg(
-        "Ocurrió un error al despachar la alerta. Intente nuevamente.",
+        err.message || "Ocurrió un error al despachar la alerta. Intente nuevamente.",
       );
     } finally {
       setIsSubmitting(false);

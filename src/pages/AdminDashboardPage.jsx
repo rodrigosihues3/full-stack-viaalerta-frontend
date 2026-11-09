@@ -1,11 +1,12 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
+import { INCIDENT_STATUS } from "../services/mockData";
 import {
-  createEntity,
-  getEntities,
-  getIncidents,
-  INCIDENT_STATUS,
-} from "../services/mockData";
+  getIncidentes,
+  getEntidades,
+  normalizeIncidente,
+} from "../services/incidentService";
+import { getSocket } from "../services/socketService";
 import {
   AlertTriangle,
   ChevronLeft,
@@ -20,6 +21,7 @@ import {
   Search,
   ShieldCheck,
   X,
+  Loader2,
 } from "lucide-react";
 
 const PAGE_SIZE = 6;
@@ -39,8 +41,9 @@ const severityBadge = (value) =>
 
 export const AdminDashboardPage = () => {
   const { user, logout } = useAuth();
-  const [incidents] = useState(getIncidents);
-  const [entities, setEntities] = useState(getEntities);
+  const [incidents, setIncidents] = useState([]);
+  const [entities, setEntities] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [tab, setTab] = useState("consolidated");
   const [query, setQuery] = useState("");
   const [entityId, setEntityId] = useState("TODAS");
@@ -50,6 +53,86 @@ export const AdminDashboardPage = () => {
   const [showRegister, setShowRegister] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
+
+  // Carga inicial y suscripción a WebSockets
+  useEffect(() => {
+    let isMounted = true;
+    const loadInitialData = async () => {
+      try {
+        const [incidentsData, entitiesData] = await Promise.all([
+          getIncidentes().catch(() => []),
+          getEntidades().catch(() => []),
+        ]);
+        if (isMounted) {
+          setIncidents(incidentsData);
+          setEntities(entitiesData);
+        }
+      } catch (err) {
+        console.error("Error al cargar datos administrativos:", err);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+    loadInitialData();
+
+    const socket = getSocket();
+    const handleNuevoIncidente = (nuevo) => {
+      const normalized = normalizeIncidente(nuevo);
+      setIncidents((prev) => {
+        if (prev.some((i) => i.id === normalized.id)) return prev;
+        return [normalized, ...prev];
+      });
+    };
+
+    const handleEstadoActualizado = (payload) => {
+      const id = payload?.incidenteId || payload?.id;
+      const nuevoEstado = (
+        payload?.nuevoEstado ||
+        payload?.estado ||
+        ""
+      ).toUpperCase();
+      setIncidents((prev) =>
+        prev.map((item) =>
+          item.id === id || item._id === id
+            ? { ...item, status: nuevoEstado, estado: nuevoEstado }
+            : item,
+        ),
+      );
+      setSelected((curr) => {
+        if (curr && (curr.id === id || curr._id === id)) {
+          return { ...curr, status: nuevoEstado, estado: nuevoEstado };
+        }
+        return curr;
+      });
+    };
+
+    const handleConfirmado = (payload) => {
+      const id = payload?.incidenteId || payload?.id;
+      setIncidents((prev) =>
+        prev.map((item) =>
+          item.id === id || item._id === id
+            ? {
+                ...item,
+                confirmaciones_count:
+                  payload?.nuevoContador ?? (item.confirmaciones_count + 1),
+              }
+            : item,
+        ),
+      );
+    };
+
+    socket.on("incidente:creado", handleNuevoIncidente);
+    socket.on("incidente:estado_actualizado", handleEstadoActualizado);
+    socket.on("incidente:confirmado", handleConfirmado);
+
+    return () => {
+      isMounted = false;
+      socket.off("incidente:creado", handleNuevoIncidente);
+      socket.off("incidente:estado_actualizado", handleEstadoActualizado);
+      socket.off("incidente:confirmado", handleConfirmado);
+    };
+  }, []);
+
   const resetPage = (handler) => (event) => {
     handler(event);
     setPage(1);
@@ -68,6 +151,7 @@ export const AdminDashboardPage = () => {
         .length,
     };
   }, [incidents]);
+
   const filtered = useMemo(
     () =>
       incidents.filter((item) => {
@@ -79,7 +163,7 @@ export const AdminDashboardPage = () => {
             item.categoryName,
             item.address,
             item.district,
-          ].some((value) => value.toLowerCase().includes(term));
+          ].some((value) => (value || "").toLowerCase().includes(term));
         return (
           matchesText &&
           (entityId === "TODAS" || item.entityId === entityId) &&
@@ -96,7 +180,12 @@ export const AdminDashboardPage = () => {
       setError("Complete todos los campos institucionales.");
       return;
     }
-    setEntities((current) => [...current, createEntity(form)]);
+    const newEnt = {
+      id: `ENT-${form.acronym.toUpperCase()}-${Date.now().toString().slice(-3)}`,
+      ...form,
+      status: "OPERATIVO",
+    };
+    setEntities((current) => [...current, newEnt]);
     setForm(emptyForm);
     setError("");
     setShowRegister(false);
@@ -265,7 +354,20 @@ export const AdminDashboardPage = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {rows.length ? (
+                  {isLoading ? (
+                    <tr>
+                      <td
+                        colSpan={8}
+                        className="py-12 text-center text-slate-500"
+                      >
+                        <Loader2
+                          size={24}
+                          className="mx-auto mb-2 animate-spin text-[#081D30]"
+                        />
+                        Sincronizando consola metropolitana con el backend...
+                      </td>
+                    </tr>
+                  ) : rows.length ? (
                     rows.map((incident) => {
                       const entity = entities.find(
                         (item) => item.id === incident.entityId,

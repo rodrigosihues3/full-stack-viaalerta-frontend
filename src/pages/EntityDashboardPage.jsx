@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
+import { INCIDENT_STATUS } from "../services/mockData";
 import {
-  getIncidentsByEntity,
-  updateIncidentStatus,
-  INCIDENT_STATUS,
-} from "../services/mockData";
+  getIncidentes,
+  updateIncidenteEstado,
+  normalizeIncidente,
+} from "../services/incidentService";
+import { getSocket } from "../services/socketService";
 import {
   ShieldAlert,
   LogOut,
@@ -24,15 +26,14 @@ import {
   ChevronRight,
   Cpu,
   AlertTriangle,
+  Loader2,
 } from "lucide-react";
 
 export const EntityDashboardPage = () => {
   const { user, logout } = useAuth();
 
-  // Carga reactiva de los incidentes asignados exclusivamente a la entidad del usuario
-  const [incidents, setIncidents] = useState(() =>
-    getIncidentsByEntity(user?.entityId),
-  );
+  const [incidents, setIncidents] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedIncident, setSelectedIncident] = useState(null);
   const [filterStatus, setFilterStatus] = useState("TODOS");
   const [searchTerm, setSearchTerm] = useState("");
@@ -42,6 +43,79 @@ export const EntityDashboardPage = () => {
     targetStatus: null,
     reason: "Reporte duplicado o ya atendido",
   });
+
+  // Carga inicial vía API y suscripción en tiempo real vía Socket.IO
+  useEffect(() => {
+    let isMounted = true;
+    const fetchIncidents = async () => {
+      try {
+        const data = await getIncidentes();
+        if (isMounted) setIncidents(data);
+      } catch (err) {
+        console.error("Error al cargar incidentes de la entidad:", err);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+    fetchIncidents();
+
+    const socket = getSocket();
+    const handleNuevoIncidente = (nuevo) => {
+      const normalized = normalizeIncidente(nuevo);
+      setIncidents((prev) => {
+        if (prev.some((i) => i.id === normalized.id)) return prev;
+        return [normalized, ...prev];
+      });
+    };
+
+    const handleEstadoActualizado = (payload) => {
+      const id = payload?.incidenteId || payload?.id;
+      const nuevoEstado = (
+        payload?.nuevoEstado ||
+        payload?.estado ||
+        ""
+      ).toUpperCase();
+      setIncidents((prev) =>
+        prev.map((item) =>
+          item.id === id || item._id === id
+            ? { ...item, status: nuevoEstado, estado: nuevoEstado }
+            : item,
+        ),
+      );
+      setSelectedIncident((curr) => {
+        if (curr && (curr.id === id || curr._id === id)) {
+          return { ...curr, status: nuevoEstado, estado: nuevoEstado };
+        }
+        return curr;
+      });
+    };
+
+    const handleConfirmado = (payload) => {
+      const id = payload?.incidenteId || payload?.id;
+      setIncidents((prev) =>
+        prev.map((item) =>
+          item.id === id || item._id === id
+            ? {
+                ...item,
+                confirmaciones_count:
+                  payload?.nuevoContador ?? (item.confirmaciones_count + 1),
+              }
+            : item,
+        ),
+      );
+    };
+
+    socket.on("incidente:creado", handleNuevoIncidente);
+    socket.on("incidente:estado_actualizado", handleEstadoActualizado);
+    socket.on("incidente:confirmado", handleConfirmado);
+
+    return () => {
+      isMounted = false;
+      socket.off("incidente:creado", handleNuevoIncidente);
+      socket.off("incidente:estado_actualizado", handleEstadoActualizado);
+      socket.off("incidente:confirmado", handleConfirmado);
+    };
+  }, []);
 
   // Recalcular métricas operativas
   const totalCount = incidents.length;
@@ -60,9 +134,9 @@ export const EntityDashboardPage = () => {
     const matchesStatus =
       filterStatus === "TODOS" || item.status === filterStatus;
     const matchesSearch =
-      item.ticketNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.district.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.categoryName.toLowerCase().includes(searchTerm.toLowerCase());
+      (item.ticketNumber || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (item.district || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (item.categoryName || "").toLowerCase().includes(searchTerm.toLowerCase());
     return matchesStatus && matchesSearch;
   });
   const pageSize = 6;
@@ -78,18 +152,30 @@ export const EntityDashboardPage = () => {
     filteredIncidents.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const showingTo = Math.min(currentPage * pageSize, filteredIncidents.length);
 
-  // Manejo del cambio de estado en tiempo real (Mock Store)
-  const handleStatusChange = (newStatus) => {
+  // Manejo del cambio de estado conectado al Backend REST
+  const handleStatusChange = async (newStatus) => {
     if (!selectedIncident) return;
-    updateIncidentStatus(selectedIncident.id, newStatus);
-    // Sincronizar estado local del dashboard
-    setIncidents(getIncidentsByEntity(user?.entityId));
-    setSelectedIncident((prev) => ({ ...prev, status: newStatus }));
-    setActionState({
-      mode: "IDLE",
-      targetStatus: null,
-      reason: "Reporte duplicado o ya atendido",
-    });
+    try {
+      const updated = await updateIncidenteEstado(selectedIncident.id, {
+        nuevoEstado: newStatus,
+        motivoDesestimacion:
+          newStatus === "DESESTIMADO" ? actionState.reason : null,
+        notaObservacion: "Actualizado desde panel de control institucional",
+      });
+
+      setIncidents((prev) =>
+        prev.map((item) => (item.id === updated.id ? updated : item)),
+      );
+      setSelectedIncident(updated);
+      setActionState({
+        mode: "IDLE",
+        targetStatus: null,
+        reason: "Reporte duplicado o ya atendido",
+      });
+    } catch (err) {
+      console.error("Error al actualizar estado del incidente:", err);
+      alert(err.message || "Error al actualizar estado en el servidor.");
+    }
   };
 
   const resetActionState = () =>
@@ -272,7 +358,20 @@ export const EntityDashboardPage = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredIncidents.length === 0 ? (
+                {isLoading ? (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="py-12 text-center text-slate-500 text-xs"
+                    >
+                      <Loader2
+                        size={24}
+                        className="mx-auto mb-2 animate-spin text-[#081D30]"
+                      />
+                      Conectando con el servidor y sincronizando incidentes...
+                    </td>
+                  </tr>
+                ) : filteredIncidents.length === 0 ? (
                   <tr>
                     <td
                       colSpan={7}

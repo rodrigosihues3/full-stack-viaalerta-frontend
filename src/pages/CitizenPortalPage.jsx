@@ -25,10 +25,13 @@ import {
   INCIDENT_CATEGORIES,
   INCIDENT_STATUS,
   ENTITIES,
-  createIncident,
-  getIncidents,
-  getIncidentsByCitizenDni,
 } from "../services/mockData";
+import {
+  getIncidentes,
+  createIncidente,
+  normalizeIncidente,
+} from "../services/incidentService";
+import { getSocket } from "../services/socketService";
 
 const iconByName = { Cone, CircleDot, Droplets, HelpCircle, AlertTriangle };
 const categoryIconStyles = {
@@ -39,8 +42,21 @@ const categoryIconStyles = {
   "CAT-05": "border-slate-300 bg-slate-100 text-slate-600",
 };
 
+const BackButton = ({ onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className="rounded-full p-1.5 text-slate-600 transition hover:bg-slate-200"
+    aria-label="Volver"
+  >
+    <ArrowLeft size={18} />
+  </button>
+);
+
 export const CitizenPortalPage = () => {
   const { user, logout } = useAuth();
+  const [incidents, setIncidents] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [currentScreen, setCurrentScreen] = useState("home");
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [severity, setSeverity] = useState("Alta");
@@ -55,11 +71,79 @@ export const CitizenPortalPage = () => {
   const [showTransmitConfirm, setShowTransmitConfirm] = useState(false);
   const [successTicket, setSuccessTicket] = useState(null);
 
+  // Carga inicial de incidentes vía HTTP y suscripción WebSocket
+  useEffect(() => {
+    let isMounted = true;
+    const fetchIncidents = async () => {
+      try {
+        const data = await getIncidentes();
+        if (isMounted) setIncidents(data);
+      } catch (err) {
+        console.error("Error al cargar incidentes:", err);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+    fetchIncidents();
+
+    const socket = getSocket();
+    const handleNuevoIncidente = (nuevo) => {
+      const normalized = normalizeIncidente(nuevo);
+      setIncidents((prev) => {
+        if (prev.some((i) => i.id === normalized.id)) return prev;
+        return [normalized, ...prev];
+      });
+    };
+
+    const handleEstadoActualizado = (payload) => {
+      const id = payload?.incidenteId || payload?.id;
+      const nuevoEstado = (
+        payload?.nuevoEstado ||
+        payload?.estado ||
+        ""
+      ).toUpperCase();
+      setIncidents((prev) =>
+        prev.map((item) =>
+          item.id === id || item._id === id
+            ? { ...item, status: nuevoEstado, estado: nuevoEstado }
+            : item,
+        ),
+      );
+    };
+
+    const handleConfirmado = (payload) => {
+      const id = payload?.incidenteId || payload?.id;
+      setIncidents((prev) =>
+        prev.map((item) =>
+          item.id === id || item._id === id
+            ? {
+                ...item,
+                confirmaciones_count:
+                  payload?.nuevoContador ?? (item.confirmaciones_count + 1),
+              }
+            : item,
+        ),
+      );
+    };
+
+    socket.on("incidente:creado", handleNuevoIncidente);
+    socket.on("incidente:estado_actualizado", handleEstadoActualizado);
+    socket.on("incidente:confirmado", handleConfirmado);
+
+    return () => {
+      isMounted = false;
+      socket.off("incidente:creado", handleNuevoIncidente);
+      socket.off("incidente:estado_actualizado", handleEstadoActualizado);
+      socket.off("incidente:confirmado", handleConfirmado);
+    };
+  }, []);
+
   useEffect(() => {
     if (currentScreen !== "confirm_report" || !navigator.geolocation) return;
-    setIsLocating(true);
+    let active = true;
     navigator.geolocation.getCurrentPosition(
       (position) => {
+        if (!active) return;
         setCoordinates({
           lat: Number(position.coords.latitude.toFixed(6)),
           lng: Number(position.coords.longitude.toFixed(6)),
@@ -67,29 +151,45 @@ export const CitizenPortalPage = () => {
         setIsLocating(false);
       },
       () => {
+        if (!active) return;
         setCoordinates({ lat: -12.046374, lng: -77.042793 });
         setIsLocating(false);
       },
       { timeout: 7000 },
     );
+    return () => {
+      active = false;
+    };
   }, [currentScreen]);
 
-  const citizenIncidents = getIncidentsByCitizenDni(user?.dni || "");
-  const activeIncidents = getIncidents().filter(
+  const citizenIncidents = incidents.filter(
+    (incident) =>
+      (user?.dni && incident.citizenDni === user.dni) ||
+      (user?.id && incident.usuario_id === user.id) ||
+      (user?.email && incident.usuario_email === user.email) ||
+      (user?.dni && String(incident.ciudadano_dni) === String(user.dni)),
+  );
+
+  const activeIncidents = incidents.filter(
     (incident) =>
       incident.status !== "RESUELTO" && incident.status !== "DESESTIMADO",
   );
+
   const assignedEntity =
+    selectedCategory?.entityId === "ENT-SEDAPAL-NORTE" ||
     selectedCategory?.entityId === "ENT-SEDAPAL"
       ? ENTITIES.SEDAPAL
       : ENTITIES.MML;
+
   const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || "Ciudadano")}&background=081D30&color=fff&size=64`;
 
   const selectCategory = (category) => {
     setSelectedCategory(category);
     setSeverity(category.defaultSeverity || "Media");
+    setIsLocating(true);
     setCurrentScreen("confirm_report");
   };
+
   const uploadPhoto = (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -97,42 +197,52 @@ export const CitizenPortalPage = () => {
     reader.onloadend = () => setPhotoPreview(reader.result);
     reader.readAsDataURL(file);
   };
+
   const submitReport = async () => {
     if (!selectedCategory) return;
     try {
       setIsSubmitting(true);
-      const ticket = await createIncident({
-        citizenDni: user.dni,
+      const ticket = await createIncidente({
+        citizenDni: user?.dni,
         categoryId: selectedCategory.id,
+        categoria_id: selectedCategory.id,
         district: "Cercado de Lima",
-        address: "Coordenadas fijadas en via publica",
+        distrito: "Cercado de Lima",
+        address: "Coordenadas fijadas en vía pública",
+        direccion_referencial: "Coordenadas fijadas en vía pública",
         lat: coordinates.lat,
+        latitud: coordinates.lat,
         lng: coordinates.lng,
+        longitud: coordinates.lng,
         severity,
+        severidad: severity,
         description:
           description.trim() ||
           "Reporte generado sin comentarios complementarios.",
+        observaciones_ciudadano:
+          description.trim() ||
+          "Reporte generado sin comentarios complementarios.",
         photoUrl: photoPreview,
+        foto_url: photoPreview,
       });
+
+      setIncidents((prev) => {
+        if (prev.some((i) => i.id === ticket.id)) return prev;
+        return [ticket, ...prev];
+      });
+
       setSuccessTicket(ticket);
       setShowTransmitConfirm(false);
       setSelectedCategory(null);
       setDescription("");
       setPhotoPreview(null);
+    } catch (err) {
+      console.error("Error al transmitir reporte:", err);
+      alert(err.message || "Error al transmitir el reporte al servidor.");
     } finally {
       setIsSubmitting(false);
     }
   };
-  const BackButton = ({ to = "home" }) => (
-    <button
-      type="button"
-      onClick={() => setCurrentScreen(to)}
-      className="rounded-full p-1.5 text-slate-600 transition hover:bg-slate-200"
-      aria-label="Volver"
-    >
-      <ArrowLeft size={18} />
-    </button>
-  );
 
   return (
     <div className="flex min-h-screen justify-center bg-slate-900 px-0 py-0 md:px-4 md:py-6">
@@ -143,7 +253,7 @@ export const CitizenPortalPage = () => {
               <ShieldAlert size={18} />
             </div>
             <div>
-              <h1 className="text-sm font-bold">ViaAlerta</h1>
+              <h1 className="text-sm font-bold">VíaAlerta</h1>
               <p className="text-[10px] text-slate-300">Canal Ciudadano</p>
             </div>
           </div>
@@ -175,7 +285,7 @@ export const CitizenPortalPage = () => {
                   ¿Detectaste un incidente?
                 </h2>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  Reporta fallas viales o roturas de red para canalizacion
+                  Reporta fallas viales o roturas de red para canalización
                   oficial.
                 </p>
               </div>
@@ -188,7 +298,7 @@ export const CitizenPortalPage = () => {
                   Reportar Incidente
                 </span>
                 <span className="mt-1 text-xs text-red-100">
-                  Categorice y envie su alerta
+                  Categorice y envíe su alerta
                 </span>
               </button>
               <div className="grid grid-cols-2 gap-3">
@@ -228,7 +338,7 @@ export const CitizenPortalPage = () => {
             </div>
             <div className="rounded border border-blue-200 bg-blue-50 p-3 text-[11px] text-blue-800">
               Su reporte se envía directamente a las entidades operativas
-              de las Municipalidades de Lima y Sedapal.
+              de las Municipalidades de Lima y Sedapal vía REST y WebSockets.
             </div>
           </main>
         )}
@@ -236,7 +346,7 @@ export const CitizenPortalPage = () => {
         {currentScreen === "profile" && (
           <main className="flex-1 p-5">
             <div className="mb-5 flex items-center gap-2">
-              <BackButton />
+              <BackButton onClick={() => setCurrentScreen("home")} />
               <h2 className="text-sm font-bold uppercase tracking-wide text-slate-800">
                 Mi Perfil
               </h2>
@@ -267,7 +377,7 @@ export const CitizenPortalPage = () => {
                 <div>
                   <dt className="text-slate-400">DNI</dt>
                   <dd className="mt-0.5 font-mono font-bold text-slate-700">
-                    {user?.dni}
+                    {user?.dni || "No especificado"}
                   </dd>
                 </div>
                 <div>
@@ -282,7 +392,7 @@ export const CitizenPortalPage = () => {
                 className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-red-600 py-2.5 text-xs font-bold uppercase text-white shadow transition hover:bg-red-700"
               >
                 <LogOut size={16} />
-                Cerrar Sesion
+                Cerrar Sesión
               </button>
             </section>
           </main>
@@ -291,7 +401,7 @@ export const CitizenPortalPage = () => {
         {currentScreen === "select_category" && (
           <main className="flex-1 p-5">
             <div className="mb-4 flex items-center gap-2">
-              <BackButton />
+              <BackButton onClick={() => setCurrentScreen("home")} />
               <h2 className="text-sm font-bold uppercase tracking-wide text-slate-800">
                 Seleccione el tipo de daño
               </h2>
@@ -311,7 +421,10 @@ export const CitizenPortalPage = () => {
                   >
                     <div className="flex items-center gap-3">
                       <div
-                        className={`rounded-md border p-2.5 ${categoryIconStyles[category.id] || categoryIconStyles["CAT-05"]}`}
+                        className={`rounded-md border p-2.5 ${
+                          categoryIconStyles[category.id] ||
+                          categoryIconStyles["CAT-05"]
+                        }`}
                       >
                         <Icon size={21} />
                       </div>
@@ -342,7 +455,7 @@ export const CitizenPortalPage = () => {
               className="space-y-4"
             >
               <div className="flex items-center gap-2">
-                <BackButton to="select_category" />
+                <BackButton onClick={() => setCurrentScreen("select_category")} />
                 <div>
                   <h2 className="text-sm font-bold uppercase tracking-wide text-slate-800">
                     Confirmar reporte
@@ -375,7 +488,7 @@ export const CitizenPortalPage = () => {
               <section className="space-y-2 rounded-lg border border-slate-200 bg-white p-3.5 shadow-2xs">
                 <div className="flex items-center justify-between">
                   <p className="text-[10px] font-bold uppercase text-slate-500">
-                    Ubicacion
+                    Ubicación
                   </p>
                   <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
                     {isLocating ? "Capturando GPS" : "GPS activo"}
@@ -391,7 +504,7 @@ export const CitizenPortalPage = () => {
               </section>
               <section className="space-y-2 rounded-lg border border-slate-200 bg-white p-3.5 shadow-2xs">
                 <p className="text-[10px] font-bold uppercase text-slate-500">
-                  Evidencia fotografica opcional
+                  Evidencia fotográfica opcional
                 </p>
                 {photoPreview ? (
                   <div className="relative h-36 overflow-hidden rounded-lg border border-slate-300 bg-slate-900">
@@ -423,7 +536,7 @@ export const CitizenPortalPage = () => {
                     </label>
                     <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-slate-300 bg-slate-50 p-3 text-center text-[11px] font-bold text-slate-700 transition hover:border-[#081D30]">
                       <Image size={20} className="text-[#081D30]" />
-                      Subir de Galeria
+                      Subir de Galería
                       <input
                         type="file"
                         accept="image/*"
@@ -436,7 +549,7 @@ export const CitizenPortalPage = () => {
               </section>
               <section className="space-y-2 rounded-lg border border-slate-200 bg-white p-3.5 shadow-2xs">
                 <label className="block text-[10px] font-bold uppercase text-slate-500">
-                  Descripcion
+                  Descripción
                 </label>
                 <textarea
                   rows={3}
@@ -460,7 +573,7 @@ export const CitizenPortalPage = () => {
         {currentScreen === "monitor" && (
           <main className="flex-1 overflow-y-auto p-5">
             <div className="mb-4 flex items-center gap-2">
-              <BackButton />
+              <BackButton onClick={() => setCurrentScreen("home")} />
               <h2 className="text-sm font-bold uppercase tracking-wide text-slate-800">
                 Monitor Vial
               </h2>
@@ -490,34 +603,47 @@ export const CitizenPortalPage = () => {
             <h3 className="mb-2 text-xs font-bold uppercase text-slate-700">
               Incidentes activos en Lima Metropolitana
             </h3>
-            <div className="space-y-2.5">
-              {activeIncidents.map((incident, index) => {
-                const status =
-                  INCIDENT_STATUS[incident.status] ||
-                  INCIDENT_STATUS.REGISTRADO;
-                return (
-                  <article
-                    key={incident.id}
-                    className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
-                  >
-                    <div className="flex justify-between gap-2">
-                      <p className="text-xs font-bold text-slate-800">
-                        {incident.categoryName}
-                      </p>
-                      <span
-                        className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold ${status.badge}`}
+            {isLoading ? (
+              <div className="py-8 text-center text-xs text-slate-500">
+                <Loader2 size={20} className="mx-auto mb-2 animate-spin text-[#081D30]" />
+                Cargando monitor en tiempo real...
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {activeIncidents.length === 0 ? (
+                  <p className="py-6 text-center text-xs text-slate-400">
+                    No hay incidentes activos reportados.
+                  </p>
+                ) : (
+                  activeIncidents.map((incident, index) => {
+                    const status =
+                      INCIDENT_STATUS[incident.status] ||
+                      INCIDENT_STATUS.REGISTRADO;
+                    return (
+                      <article
+                        key={incident.id}
+                        className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
                       >
-                        {status.label}
-                      </span>
-                    </div>
-                    <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500">
-                      <span>{incident.district}</span>
-                      <span>a {(1.2 + index * 0.7).toFixed(1)} km</span>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
+                        <div className="flex justify-between gap-2">
+                          <p className="text-xs font-bold text-slate-800">
+                            {incident.categoryName}
+                          </p>
+                          <span
+                            className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold ${status.badge}`}
+                          >
+                            {status.label}
+                          </span>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500">
+                          <span>{incident.district}</span>
+                          <span>a {(1.2 + index * 0.7).toFixed(1)} km</span>
+                        </div>
+                      </article>
+                    );
+                  })
+                )}
+              </div>
+            )}
           </main>
         )}
 
@@ -525,7 +651,7 @@ export const CitizenPortalPage = () => {
           <main className="flex-1 overflow-y-auto p-5">
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <BackButton />
+                <BackButton onClick={() => setCurrentScreen("home")} />
                 <h2 className="text-sm font-bold uppercase tracking-wide text-slate-800">
                   Mis Reportes
                 </h2>
@@ -534,51 +660,58 @@ export const CitizenPortalPage = () => {
                 {citizenIncidents.length} reportes
               </span>
             </div>
-            <div className="space-y-3">
-              {citizenIncidents.length === 0 ? (
-                <div className="py-16 text-center text-slate-400">
-                  <FileText size={32} className="mx-auto mb-2 opacity-40" />
-                  <p className="text-xs">
-                    No tiene incidentes registrados en su historial.
-                  </p>
-                </div>
-              ) : (
-                citizenIncidents.map((item) => {
-                  const status =
-                    INCIDENT_STATUS[item.status] || INCIDENT_STATUS.REGISTRADO;
-                  return (
-                    <article
-                      key={item.id}
-                      className="rounded-lg border border-slate-200 bg-white p-3.5 shadow-2xs"
-                    >
-                      <div className="mb-1.5 flex items-center justify-between">
-                        <span className="font-mono text-[10px] font-bold text-slate-500">
-                          {item.ticketNumber}
-                        </span>
-                        <span
-                          className={`rounded border px-2 py-0.5 text-[10px] font-bold ${status.badge}`}
-                        >
-                          {status.label}
-                        </span>
-                      </div>
-                      <p className="text-xs font-bold text-slate-800">
-                        {item.categoryName}
-                      </p>
-                      <p className="mt-0.5 text-[10px] text-slate-400">
-                        {item.address}
-                      </p>
-                      <div className="mt-2 flex justify-between border-t border-slate-100 pt-2 text-[10px] text-slate-500">
-                        <span>{item.entityName}</span>
-                        <span className="flex items-center gap-1">
-                          <Clock size={12} />
-                          {item.createdAt}
-                        </span>
-                      </div>
-                    </article>
-                  );
-                })
-              )}
-            </div>
+            {isLoading ? (
+              <div className="py-12 text-center text-xs text-slate-500">
+                <Loader2 size={20} className="mx-auto mb-2 animate-spin text-[#081D30]" />
+                Consultando historial de reportes...
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {citizenIncidents.length === 0 ? (
+                  <div className="py-16 text-center text-slate-400">
+                    <FileText size={32} className="mx-auto mb-2 opacity-40" />
+                    <p className="text-xs">
+                      No tiene incidentes registrados en su historial.
+                    </p>
+                  </div>
+                ) : (
+                  citizenIncidents.map((item) => {
+                    const status =
+                      INCIDENT_STATUS[item.status] || INCIDENT_STATUS.REGISTRADO;
+                    return (
+                      <article
+                        key={item.id}
+                        className="rounded-lg border border-slate-200 bg-white p-3.5 shadow-2xs"
+                      >
+                        <div className="mb-1.5 flex items-center justify-between">
+                          <span className="font-mono text-[10px] font-bold text-slate-500">
+                            {item.ticketNumber}
+                          </span>
+                          <span
+                            className={`rounded border px-2 py-0.5 text-[10px] font-bold ${status.badge}`}
+                          >
+                            {status.label}
+                          </span>
+                        </div>
+                        <p className="text-xs font-bold text-slate-800">
+                          {item.categoryName}
+                        </p>
+                        <p className="mt-0.5 text-[10px] text-slate-400">
+                          {item.address}
+                        </p>
+                        <div className="mt-2 flex justify-between border-t border-slate-100 pt-2 text-[10px] text-slate-500">
+                          <span>{item.entityName}</span>
+                          <span className="flex items-center gap-1">
+                            <Clock size={12} />
+                            {item.createdAt}
+                          </span>
+                        </div>
+                      </article>
+                    );
+                  })
+                )}
+              </div>
+            )}
           </main>
         )}
 
@@ -586,10 +719,10 @@ export const CitizenPortalPage = () => {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
             <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-2xl">
               <h3 className="text-sm font-bold text-slate-800">
-                Confirmar envio
+                Confirmar envío
               </h3>
               <p className="mt-2 text-xs leading-relaxed text-slate-600">
-                Desea transmitir este reporte a {assignedEntity.name}?
+                ¿Desea transmitir este reporte a {assignedEntity.name}?
               </p>
               <div className="mt-5 grid grid-cols-2 gap-3">
                 <button
@@ -608,13 +741,14 @@ export const CitizenPortalPage = () => {
                   {isSubmitting ? (
                     <Loader2 size={16} className="animate-spin" />
                   ) : (
-                    "Confirmar Envio"
+                    "Confirmar Envío"
                   )}
                 </button>
               </div>
             </div>
           </div>
         )}
+
         {successTicket && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
             <div className="w-full max-w-sm rounded-xl bg-white p-6 text-center shadow-2xl">
@@ -625,7 +759,7 @@ export const CitizenPortalPage = () => {
                 Reporte transmitido
               </h3>
               <p className="mt-1 text-xs text-slate-500">
-                El incidente fue ingresado al sistema de fiscalizacion.
+                El incidente fue ingresado al sistema de fiscalización.
               </p>
               <div className="my-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-left font-mono text-xs">
                 <p>

@@ -1,154 +1,125 @@
-// Catálogo de usuarios semilla con roles diferenciados
-const MOCK_ACCOUNTS = [
-  {
-    id: "usr-admin-01",
-    identifier: "admin@viaalerta.gob.pe",
-    dni: "00000001",
-    email: "admin@viaalerta.gob.pe",
-    password: "Password123!",
-    name: "Administrador Central",
-    role: "SUPER_ADMIN",
-    entityId: null,
-    entityName: "Gobierno Metropolitano",
-  },
-  {
-    id: "USR-002",
-    identifier: "operaciones@mml.gob.pe",
-    dni: "40192834",
-    email: "operaciones@mml.gob.pe",
-    password: "Password123!",
-    name: "Centro de Control Vial - Sede Central",
-    role: "OPERADOR_ENTIDAD",
-    entityId: "ENT-MML-CERCADO",
-    entityName: "Municipalidad de Lima - Sede Cercado",
-    jurisdiction: "Vialidad Metropolitana",
-  },
-  {
-    id: "USR-003",
-    identifier: "operaciones@sedapal.com.pe",
-    dni: "41928374",
-    email: "operaciones@sedapal.com.pe",
-    password: "Password123!",
-    name: "Operaciones Técnicas - Sede Lima Centro",
-    role: "OPERADOR_ENTIDAD",
-    entityId: "ENT-SEDAPAL-NORTE",
-    entityName: "Sedapal Norte",
-    jurisdiction: "Saneamiento y Redes Primarias",
-  },
-  {
-    id: "usr-citizen-01",
-    identifier: "73232323",
-    dni: "73232323",
-    email: "ciudadano@correo.pe",
-    password: "Password123!",
-    name: "Ana Torres Meza",
-    role: "CIUDADANO",
-    entityId: null,
-    entityName: null,
-  },
-];
+import { apiFetch } from "./api";
 
-// Generador de JWT sintético estructurado en Base64URL
-const generateSyntheticJWT = (user) => {
-  const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const payload = btoa(
-    JSON.stringify({
-      sub: user.id,
-      dni: user.dni,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      entityId: user.entityId,
-      entityName: user.entityName,
-      jurisdiction: user.jurisdiction,
-      exp: Math.floor(Date.now() / 1000) + 8 * 3600, // 8 horas
+/**
+ * Normaliza la estructura del usuario para garantizar compatibilidad
+ * tanto con el contrato del backend (rol, nombres, entidad_id)
+ * como con las vistas del frontend (role, name, entityId).
+ */
+export const normalizeUser = (user) => {
+  if (!user) return null;
+  const fullName = user.nombres
+    ? `${user.nombres} ${user.apellidos || ""}`.trim()
+    : user.name || user.email || "Usuario";
+
+  return {
+    ...user,
+    id: user.id || user._id,
+    dni: user.dni || "",
+    email: user.email,
+    nombres: user.nombres || user.name || "",
+    apellidos: user.apellidos || "",
+    name: fullName,
+    rol: user.rol || user.role,
+    role: user.rol || user.role,
+    entidad_id: user.entidad_id || user.entityId || null,
+    entityId: user.entidad_id || user.entityId || null,
+    entityName: user.entidad_nombre || user.entityName || null,
+    jurisdiction: user.jurisdiccion || user.jurisdiction || null,
+  };
+};
+
+/**
+ * Inicia sesión enviando credenciales a /api/auth/login.
+ * Retorna tokenAcceso y usuario normalizado, o { requiere2FA: true, tokenTemporal }.
+ */
+export const login = async (emailOrIdentifier, password) => {
+  const data = await apiFetch("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({
+      email: emailOrIdentifier.trim(),
+      password,
     }),
-  );
-  const signature = btoa("mock_vialerta_signature_token");
-  return `${header}.${payload}.${signature}`;
-};
+  });
 
-export const login = async (identifier, password) => {
-  await new Promise((resolve) => setTimeout(resolve, 600)); // Latencia de red simulada
-
-  const cleanId = identifier.trim().toLowerCase();
-  const user = MOCK_ACCOUNTS.find(
-    (u) =>
-      (u.identifier.toLowerCase() === cleanId ||
-        u.dni === cleanId ||
-        u.email.toLowerCase() === cleanId) &&
-      u.password === password,
-  );
-
-  if (!user) {
-    throw new Error(
-      "Credenciales inválidas. Verifique su identificador (DNI/correo) o contraseña.",
-    );
+  if (data.requiere2FA) {
+    return {
+      requiere2FA: true,
+      tokenTemporal: data.tokenTemporal,
+    };
   }
 
-  const token = generateSyntheticJWT(user);
   return {
-    token,
-    user: {
-      id: user.id,
-      dni: user.dni,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      entityId: user.entityId,
-      entityName: user.entityName,
-      jurisdiction: user.jurisdiction,
-    },
+    tokenAcceso: data.tokenAcceso || data.token,
+    user: normalizeUser(data.user),
   };
 };
 
-export const registerCitizen = async ({ dni, name, email, password }) => {
-  await new Promise((resolve) => setTimeout(resolve, 600));
+/**
+ * Verifica el código TOTP de 6 dígitos ante el backend.
+ */
+export const verify2FA = async (tokenTemporal, codigo) => {
+  const data = await apiFetch("/api/auth/2fa/verificar", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${tokenTemporal}`,
+    },
+    body: JSON.stringify({
+      codigo: String(codigo).trim(),
+    }),
+  });
 
-  const cleanDni = dni.trim();
-  const cleanEmail = email.trim().toLowerCase();
-  const cleanName = name.trim();
-
-  if (!/^\d{8}$/.test(cleanDni)) {
-    throw new Error("El DNI debe contener exactamente 8 digitos numericos.");
-  }
-
-  if (MOCK_ACCOUNTS.some((account) => account.dni === cleanDni)) {
-    throw new Error("Ya existe una cuenta registrada con este DNI.");
-  }
-
-  const user = {
-    id: `usr-citizen-${Date.now()}`,
-    identifier: cleanDni,
-    dni: cleanDni,
-    email: cleanEmail,
-    password,
-    name: cleanName,
-    role: "CIUDADANO",
-    entityId: null,
-    entityName: null,
-  };
-
-  MOCK_ACCOUNTS.push(user);
-  const token = generateSyntheticJWT(user);
   return {
-    token,
-    user: {
-      id: user.id,
-      dni: user.dni,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      entityId: user.entityId,
-      entityName: user.entityName,
-    },
+    tokenAcceso: data.tokenAcceso || data.token,
+    user: normalizeUser(data.user),
   };
 };
 
+/**
+ * Registra un nuevo ciudadano ante el backend.
+ */
+export const registerCitizen = async ({ dni, name, email, password, apellidos = "" }) => {
+  // Si no se pasaron apellidos separados, inferir del nombre
+  let nombres = name.trim();
+  let apellidosFinal = apellidos.trim();
+
+  if (!apellidosFinal && nombres.includes(" ")) {
+    const parts = nombres.split(" ");
+    nombres = parts.slice(0, Math.ceil(parts.length / 2)).join(" ");
+    apellidosFinal = parts.slice(Math.ceil(parts.length / 2)).join(" ");
+  }
+
+  const data = await apiFetch("/api/auth/registro", {
+    method: "POST",
+    body: JSON.stringify({
+      dni: dni.trim(),
+      email: email.trim().toLowerCase(),
+      password,
+      nombres,
+      apellidos: apellidosFinal || "Ciudadano",
+    }),
+  });
+
+  return {
+    mensaje: data.mensaje,
+    user: normalizeUser(data.user),
+  };
+};
+
+/**
+ * Consulta el perfil del usuario autenticado.
+ */
+export const getProfile = async () => {
+  const data = await apiFetch("/api/auth/perfil");
+  return normalizeUser(data.user);
+};
+
+/**
+ * Cuentas demo de referencia rápida para facilitar pruebas en el login.
+ */
 export const getDemoAccounts = () => [
   {
-    label: "Ciudadano (DNI)",
-    id: "73232323",
+    label: "Ciudadano (Sin 2FA)",
+    id: "ciudadano@correo.pe",
     pass: "Password123!",
     role: "CIUDADANO",
   },
