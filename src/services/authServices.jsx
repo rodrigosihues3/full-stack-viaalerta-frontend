@@ -191,3 +191,20 @@ export const getDemoAccounts = () => [
     role: "SUPER_ADMIN",
   },
 ];
+
+/**
+ * Consulta información de un DNI mediante el proxy del backend (/api/auth/reniec/:dni).
+ * Evita bloqueos CORS y maneja errores de forma resiliente.
+ * @param {string} dni - Número de documento de 8 dígitos.
+ * @returns {Promise<{ dni: string, nombres?: string, apellidos?: string, nombreCompleto?: string } | null>}
+ */
+export const consultarDniDecolecta = async (dni) => {
+  try {
+    const data = await apiFetch(`/api/auth/reniec/${dni}`);
+    return data; // { dni, nombres, apellidos, nombreCompleto }
+  } catch (err) {
+    console.warn("Consulta de DNI no disponible:", err.message);
+    return null;
+  }
+};
+
