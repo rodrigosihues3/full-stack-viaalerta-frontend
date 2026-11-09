@@ -209,6 +209,7 @@ export const LoginPage = () => {
                 inputMode="numeric"
                 pattern="[0-9]*"
                 maxLength={6}
+                autoComplete="one-time-code"
                 value={twoFactorCode}
                 onChange={(e) =>
                   setTwoFactorCode(e.target.value.replace(/\D/g, "").slice(0, 6))
@@ -254,6 +255,7 @@ export const LoginPage = () => {
               icon={<UserCheck size={18} />}
               value={identifier}
               onChange={setIdentifier}
+              autoComplete="username"
               placeholder="ciudadano@correo.pe u operaciones@mml.gob.pe"
               disabled={isSubmitting}
             />
@@ -262,6 +264,7 @@ export const LoginPage = () => {
               icon={<Lock size={18} />}
               value={password}
               onChange={setPassword}
+              autoComplete="current-password"
               placeholder="Ingrese su contraseña"
               type="password"
               disabled={isSubmitting}
@@ -307,6 +310,7 @@ export const LoginPage = () => {
               onChange={(value) =>
                 setRegistration({ ...registration, name: value })
               }
+              autoComplete="name"
               placeholder="Ingrese sus nombres completos"
               disabled={isSubmitting}
             />
@@ -317,6 +321,7 @@ export const LoginPage = () => {
               onChange={(value) =>
                 setRegistration({ ...registration, email: value })
               }
+              autoComplete="email"
               placeholder="nombre@correo.pe"
               type="email"
               disabled={isSubmitting}
@@ -328,6 +333,7 @@ export const LoginPage = () => {
               onChange={(value) =>
                 setRegistration({ ...registration, password: value })
               }
+              autoComplete="new-password"
               placeholder="Cree una contraseña"
               type="password"
               disabled={isSubmitting}
@@ -398,6 +404,7 @@ const Field = ({
   type = "text",
   inputMode,
   disabled,
+  autoComplete,
 }) => (
   <div>
     <label className="mb-1 block text-xs font-bold uppercase text-slate-700">
@@ -410,6 +417,7 @@ const Field = ({
       <input
         type={type}
         inputMode={inputMode}
+        autoComplete={autoComplete}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
