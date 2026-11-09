@@ -7,8 +7,10 @@ import {
   normalizeIncidente,
 } from "../services/incidentService";
 import { getSocket } from "../services/socketService";
+import { Security2FAModal } from "../components/Security2FAModal";
 import {
   ShieldAlert,
+  ShieldCheck,
   LogOut,
   Search,
   Filter,
@@ -38,6 +40,7 @@ export const EntityDashboardPage = () => {
   const [filterStatus, setFilterStatus] = useState("TODOS");
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
   const [actionState, setActionState] = useState({
     mode: "IDLE",
     targetStatus: null,
@@ -210,7 +213,7 @@ export const EntityDashboardPage = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <div className="text-right hidden sm:block">
             <span className="text-xs font-bold block">{user?.name}</span>
             <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wide text-blue-200">
@@ -218,6 +221,31 @@ export const EntityDashboardPage = () => {
               {user?.jurisdiction || "Jurisdicción institucional"}
             </span>
           </div>
+
+          {/* Botón Acceso Seguridad / 2FA */}
+          <button
+            type="button"
+            onClick={() => setIsSecurityModalOpen(true)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded border transition cursor-pointer ${
+              user?.dos_pasos_activo
+                ? "bg-emerald-950/50 text-emerald-300 border-emerald-600/50 hover:bg-emerald-900/60"
+                : "bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700"
+            }`}
+            title="Seguridad y Protección 2FA"
+          >
+            {user?.dos_pasos_activo ? (
+              <>
+                <ShieldCheck size={14} className="text-emerald-400" />
+                <span>2FA Activo</span>
+              </>
+            ) : (
+              <>
+                <ShieldAlert size={14} className="text-amber-400" />
+                <span>Seguridad / 2FA</span>
+              </>
+            )}
+          </button>
+
           <button
             onClick={logout}
             title="Cerrar Sesión"
@@ -952,6 +980,12 @@ export const EntityDashboardPage = () => {
           </div>
         </div>
       )}
+
+      {/* Modal de Seguridad 2FA */}
+      <Security2FAModal
+        isOpen={isSecurityModalOpen}
+        onClose={() => setIsSecurityModalOpen(false)}
+      />
     </div>
   );
 };

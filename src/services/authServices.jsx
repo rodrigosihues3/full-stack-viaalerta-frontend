@@ -25,6 +25,9 @@ export const normalizeUser = (user) => {
     entityId: user.entidad_id || user.entityId || null,
     entityName: user.entidad_nombre || user.entityName || null,
     jurisdiction: user.jurisdiccion || user.jurisdiction || null,
+    dos_pasos_activo: Boolean(
+      user.dos_pasos_activo ?? user.dosPasosActivo ?? user.twoFactorEnabled
+    ),
   };
 };
 
@@ -72,6 +75,52 @@ export const verify2FA = async (tokenTemporal, codigo) => {
     tokenAcceso: data.tokenAcceso || data.token,
     user: normalizeUser(data.user),
   };
+};
+
+/**
+ * Solicita la configuración de autenticación en dos pasos (2FA).
+ * Realiza una llamada autenticada POST /api/auth/2fa/configurar.
+ * Retorna { secreto, uri, qr, mensaje }.
+ */
+export const setup2FA = async () => {
+  const data = await apiFetch("/api/auth/2fa/configurar", {
+    method: "POST",
+  });
+
+  return {
+    secreto: data?.secreto,
+    uri: data?.uri,
+    qr: data?.qr,
+    mensaje: data?.mensaje || "Configuración 2FA inicializada con éxito",
+    ...data,
+  };
+};
+
+/**
+ * Envía el primer código TOTP de 6 dígitos para consolidar y activar 2FA.
+ * Realiza una llamada autenticada POST /api/auth/2fa/activar enviando { codigo: String(codigo).trim() }.
+ * Retorna la respuesta del backend y actualiza el objeto en localStorage fijando dos_pasos_activo = true.
+ */
+export const activate2FA = async (codigo) => {
+  const data = await apiFetch("/api/auth/2fa/activar", {
+    method: "POST",
+    body: JSON.stringify({
+      codigo: String(codigo).trim(),
+    }),
+  });
+
+  try {
+    const rawStored = localStorage.getItem("via_alerta_user");
+    if (rawStored) {
+      const parsed = JSON.parse(rawStored);
+      parsed.dos_pasos_activo = true;
+      localStorage.setItem("via_alerta_user", JSON.stringify(parsed));
+    }
+  } catch (err) {
+    console.error("Error al actualizar dos_pasos_activo en localStorage:", err);
+  }
+
+  return data;
 };
 
 /**

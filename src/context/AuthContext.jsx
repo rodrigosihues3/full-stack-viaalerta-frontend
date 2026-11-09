@@ -1,5 +1,9 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { login as loginService, verify2FA as verify2FAService } from "../services/authServices";
+import {
+  login as loginService,
+  verify2FA as verify2FAService,
+  activate2FA as activate2FAService,
+} from "../services/authServices";
 import { disconnectSocket } from "../services/socketService";
 
 const AuthContext = createContext(null);
@@ -75,6 +79,21 @@ export const AuthProvider = ({ children }) => {
     setTempToken(null);
   };
 
+  const marcar2FAActivo = useCallback(() => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const updated = { ...prev, dos_pasos_activo: true };
+      localStorage.setItem("via_alerta_user", JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
+  const activar2FA = async (codigo) => {
+    const result = await activate2FAService(codigo);
+    marcar2FAActivo();
+    return result;
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -87,6 +106,8 @@ export const AuthProvider = ({ children }) => {
         completar2FA,
         cancelar2FA,
         logout,
+        marcar2FAActivo,
+        activar2FA,
       }}
     >
       {children}

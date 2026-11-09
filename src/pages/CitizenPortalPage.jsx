@@ -19,8 +19,10 @@ import {
   Map,
   MapPin,
   ShieldAlert,
+  ShieldCheck,
   X,
 } from "lucide-react";
+import { Security2FAModal } from "../components/Security2FAModal";
 import {
   INCIDENT_CATEGORIES,
   INCIDENT_STATUS,
@@ -70,6 +72,7 @@ export const CitizenPortalPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showTransmitConfirm, setShowTransmitConfirm] = useState(false);
   const [successTicket, setSuccessTicket] = useState(null);
+  const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
 
   // Carga inicial de incidentes vía HTTP y suscripción WebSocket
   useEffect(() => {
@@ -257,24 +260,50 @@ export const CitizenPortalPage = () => {
               <p className="text-[10px] text-slate-300">Canal Ciudadano</p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setCurrentScreen("profile")}
-            className="flex items-center gap-2 rounded-lg p-1 text-right transition hover:bg-slate-800"
-            aria-label="Abrir mi perfil"
-          >
-            <div>
-              <p className="max-w-28 truncate text-xs font-bold">
-                {user?.name || "Ciudadano"}
-              </p>
-              <p className="text-[10px] text-slate-300">Mi perfil</p>
-            </div>
-            <img
-              src={avatarUrl}
-              alt="Avatar del ciudadano"
-              className="h-9 w-9 rounded-full border border-slate-300"
-            />
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Botón Acceso Seguridad / 2FA */}
+            <button
+              type="button"
+              onClick={() => setIsSecurityModalOpen(true)}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition border ${
+                user?.dos_pasos_activo
+                  ? "bg-emerald-950/40 text-emerald-300 border-emerald-600/50 hover:bg-emerald-900/50"
+                  : "bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700"
+              }`}
+              title="Configuración de Seguridad 2FA"
+            >
+              {user?.dos_pasos_activo ? (
+                <>
+                  <ShieldCheck size={14} className="text-emerald-400" />
+                  <span>2FA Activo</span>
+                </>
+              ) : (
+                <>
+                  <ShieldAlert size={14} className="text-amber-400" />
+                  <span>Seguridad 2FA</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setCurrentScreen("profile")}
+              className="flex items-center gap-2 rounded-lg p-1 text-right transition hover:bg-slate-800"
+              aria-label="Abrir mi perfil"
+            >
+              <div>
+                <p className="max-w-28 truncate text-xs font-bold">
+                  {user?.name || "Ciudadano"}
+                </p>
+                <p className="text-[10px] text-slate-300">Mi perfil</p>
+              </div>
+              <img
+                src={avatarUrl}
+                alt="Avatar del ciudadano"
+                className="h-9 w-9 rounded-full border border-slate-300"
+              />
+            </button>
+          </div>
         </header>
 
         {currentScreen === "home" && (
@@ -387,6 +416,56 @@ export const CitizenPortalPage = () => {
                   </dd>
                 </div>
               </dl>
+
+              {/* Módulo de Seguridad 2FA en Perfil */}
+              <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div
+                      className={`p-2 rounded-lg border ${
+                        user?.dos_pasos_activo
+                          ? "bg-emerald-100 text-emerald-700 border-emerald-200"
+                          : "bg-amber-100 text-amber-700 border-amber-200"
+                      }`}
+                    >
+                      {user?.dos_pasos_activo ? (
+                        <ShieldCheck size={18} />
+                      ) : (
+                        <ShieldAlert size={18} />
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-bold text-slate-800">
+                        Autenticación en Dos Pasos (2FA)
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        {user?.dos_pasos_activo
+                          ? "Protección TOTP activa"
+                          : "Sin segundo factor de seguridad"}
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                      user?.dos_pasos_activo
+                        ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                        : "bg-amber-100 text-amber-800 border-amber-300"
+                    }`}
+                  >
+                    {user?.dos_pasos_activo ? "2FA Activo" : "Inactivo"}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSecurityModalOpen(true)}
+                  className="mt-3 w-full rounded-lg border border-slate-300 bg-white py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 active:scale-[0.99] transition shadow-2xs cursor-pointer"
+                >
+                  {user?.dos_pasos_activo
+                    ? "Gestionar / Reconfigurar 2FA"
+                    : "Configurar y Activar 2FA"}
+                </button>
+              </div>
+
               <button
                 onClick={logout}
                 className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-red-600 py-2.5 text-xs font-bold uppercase text-white shadow transition hover:bg-red-700"
@@ -782,6 +861,12 @@ export const CitizenPortalPage = () => {
             </div>
           </div>
         )}
+
+        {/* Modal de Seguridad 2FA */}
+        <Security2FAModal
+          isOpen={isSecurityModalOpen}
+          onClose={() => setIsSecurityModalOpen(false)}
+        />
       </div>
     </div>
   );

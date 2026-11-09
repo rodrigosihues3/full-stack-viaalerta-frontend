@@ -7,6 +7,7 @@ import {
   normalizeIncidente,
 } from "../services/incidentService";
 import { getSocket } from "../services/socketService";
+import { Security2FAModal } from "../components/Security2FAModal";
 import {
   AlertTriangle,
   ChevronLeft,
@@ -19,6 +20,7 @@ import {
   LogOut,
   Plus,
   Search,
+  ShieldAlert,
   ShieldCheck,
   X,
   Loader2,
@@ -53,6 +55,7 @@ export const AdminDashboardPage = () => {
   const [showRegister, setShowRegister] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
+  const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
 
   // Carga inicial y suscripción a WebSockets
   useEffect(() => {
@@ -209,13 +212,38 @@ export const AdminDashboardPage = () => {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <div className="hidden text-right sm:block">
               <span className="block text-xs font-bold">{user?.name}</span>
               <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wide text-blue-200">
                 {user?.email}
               </span>
             </div>
+
+            {/* Botón Acceso Seguridad / 2FA */}
+            <button
+              type="button"
+              onClick={() => setIsSecurityModalOpen(true)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded border transition cursor-pointer ${
+                user?.dos_pasos_activo
+                  ? "bg-emerald-950/50 text-emerald-300 border-emerald-600/50 hover:bg-emerald-900/60"
+                  : "bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700"
+              }`}
+              title="Seguridad y Protección 2FA"
+            >
+              {user?.dos_pasos_activo ? (
+                <>
+                  <ShieldCheck size={14} className="text-emerald-400" />
+                  <span>2FA Activo</span>
+                </>
+              ) : (
+                <>
+                  <ShieldAlert size={14} className="text-amber-400" />
+                  <span>Seguridad / 2FA</span>
+                </>
+              )}
+            </button>
+
             <button
               onClick={logout}
               className="flex items-center gap-1.5 rounded border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-red-700 hover:text-white"
@@ -614,6 +642,12 @@ export const AdminDashboardPage = () => {
           </form>
         </div>
       )}
+
+      {/* Modal de Seguridad 2FA */}
+      <Security2FAModal
+        isOpen={isSecurityModalOpen}
+        onClose={() => setIsSecurityModalOpen(false)}
+      />
     </div>
   );
 };

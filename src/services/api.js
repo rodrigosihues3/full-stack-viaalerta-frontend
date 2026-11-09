@@ -44,6 +44,7 @@ export const apiFetch = async (endpoint, options = {}) => {
     const isAuthEndpoint =
       endpoint.includes("/api/auth/login") ||
       endpoint.includes("/api/auth/2fa/verificar") ||
+      endpoint.includes("/api/auth/2fa/activar") ||
       endpoint.includes("/api/auth/registro");
 
     if (!isAuthEndpoint) {
