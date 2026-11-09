@@ -3,6 +3,7 @@ import {
   login as loginService,
   verify2FA as verify2FAService,
   activate2FA as activate2FAService,
+  disable2FA as disable2FAService,
 } from "../services/authServices";
 import { disconnectSocket } from "../services/socketService";
 
@@ -94,6 +95,17 @@ export const AuthProvider = ({ children }) => {
     return result;
   };
 
+  const desactivar2FA = async () => {
+    const result = await disable2FAService();
+    setUser((prev) => {
+      if (!prev) return prev;
+      const updated = { ...prev, dos_pasos_activo: false };
+      localStorage.setItem("via_alerta_user", JSON.stringify(updated));
+      return updated;
+    });
+    return result;
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -108,6 +120,7 @@ export const AuthProvider = ({ children }) => {
         logout,
         marcar2FAActivo,
         activar2FA,
+        desactivar2FA,
       }}
     >
       {children}

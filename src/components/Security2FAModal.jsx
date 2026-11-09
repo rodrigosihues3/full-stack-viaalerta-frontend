@@ -4,6 +4,7 @@ import { setup2FA, activate2FA } from "../services/authServices";
 import {
   ShieldAlert,
   ShieldCheck,
+  ShieldOff,
   QrCode,
   Key,
   Copy,
@@ -27,7 +28,7 @@ import {
  * Al recibir HTTP 200 consolida el segundo factor y refleja el distintivo "2FA Activo".
  */
 const Security2FAModalDialog = ({ onClose, onSuccess }) => {
-  const { user, marcar2FAActivo } = useAuth();
+  const { user, marcar2FAActivo, desactivar2FA } = useAuth();
 
   // Estados del flujo: 'initial' | 'qr' | 'confirm' | 'success' | 'active'
   const [step, setStep] = useState(() =>
@@ -43,16 +44,41 @@ const Security2FAModalDialog = ({ onClose, onSuccess }) => {
 
   const [copied, setCopied] = useState(false);
 
+  // Estados para Desactivar 2FA
+  const [confirmDisable, setConfirmDisable] = useState(false);
+  const [isDisabling, setIsDisabling] = useState(false);
+  const [disableError, setDisableError] = useState(null);
+
   // Cerrar con la tecla Escape
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === "Escape" && !isSubmitting) {
+      if (e.key === "Escape" && !isSubmitting && !isDisabling) {
         onClose?.();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isSubmitting, onClose]);
+  }, [isSubmitting, isDisabling, onClose]);
+
+  // Desactivar protección en dos pasos
+  const handleDisable2FA = async () => {
+    try {
+      setIsDisabling(true);
+      setDisableError(null);
+      await desactivar2FA();
+      setConfirmDisable(false);
+      setStep("initial");
+      onSuccess?.({ deactivated: true });
+    } catch (err) {
+      console.error("Error al desactivar 2FA:", err);
+      setDisableError(
+        err.message ||
+          "No fue posible desactivar la protección 2FA. Intente nuevamente."
+      );
+    } finally {
+      setIsDisabling(false);
+    }
+  };
 
   // Iniciar configuración (Estado 1 -> Estado 2)
   const handleStartSetup = async () => {
@@ -156,7 +182,7 @@ const Security2FAModalDialog = ({ onClose, onSuccess }) => {
       aria-modal="true"
       aria-labelledby="security-modal-title"
       onClick={(e) => {
-        if (e.target === e.currentTarget && !isSubmitting) {
+        if (e.target === e.currentTarget && !isSubmitting && !isDisabling) {
           onClose?.();
         }
       }}
@@ -183,8 +209,8 @@ const Security2FAModalDialog = ({ onClose, onSuccess }) => {
           <button
             type="button"
             onClick={onClose}
-            disabled={isSubmitting}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition"
+            disabled={isSubmitting || isDisabling}
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition disabled:opacity-40"
             aria-label="Cerrar modal"
           >
             <X size={18} />
@@ -300,23 +326,92 @@ const Security2FAModalDialog = ({ onClose, onSuccess }) => {
                 </p>
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
-                <button
-                  type="button"
-                  onClick={handleStartSetup}
-                  className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 active:scale-[0.98] transition cursor-pointer"
-                >
-                  <RefreshCw size={15} />
-                  <span>Volver a Sincronizar / Nuevo QR</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="flex-1 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white hover:bg-slate-800 active:scale-[0.98] transition cursor-pointer"
-                >
-                  Cerrar
-                </button>
-              </div>
+              {confirmDisable ? (
+                <div className="rounded-xl border border-red-200 bg-red-50/80 p-4 text-left space-y-3 animate-in fade-in">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle size={18} className="text-red-600 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="text-xs font-bold text-red-900">
+                        ¿Desactivar protección en dos pasos?
+                      </h4>
+                      <p className="mt-1 text-[11px] text-red-700 leading-relaxed">
+                        Al desactivar 2FA, su cuenta dependerá únicamente de su contraseña para autenticarse y se revocará la clave criptográfica activa.
+                      </p>
+                    </div>
+                  </div>
+
+                  {disableError && (
+                    <div className="text-[11px] text-red-600 bg-red-100/80 p-2 rounded-lg border border-red-200">
+                      {disableError}
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      disabled={isDisabling}
+                      onClick={handleDisable2FA}
+                      className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50 transition cursor-pointer shadow-xs"
+                    >
+                      {isDisabling ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin" />
+                          <span>Desactivando...</span>
+                        </>
+                      ) : (
+                        <>
+                          <ShieldOff size={14} />
+                          <span>Confirmar Desactivación</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isDisabling}
+                      onClick={() => {
+                        setConfirmDisable(false);
+                        setDisableError(null);
+                      }}
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2 pt-2">
+                  <div className="flex flex-col sm:flex-row gap-2.5">
+                    <button
+                      type="button"
+                      onClick={handleStartSetup}
+                      className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 active:scale-[0.98] transition cursor-pointer"
+                    >
+                      <RefreshCw size={15} />
+                      <span>Volver a Sincronizar / Nuevo QR</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="flex-1 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white hover:bg-slate-800 active:scale-[0.98] transition cursor-pointer"
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+
+                  {/* Botón secundario sobrio para Desactivar Protección 2FA */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfirmDisable(true);
+                      setDisableError(null);
+                    }}
+                    className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-red-200 bg-red-50/50 py-2.5 text-xs font-semibold text-red-600 hover:bg-red-50 hover:border-red-300 active:scale-[0.98] transition cursor-pointer"
+                  >
+                    <ShieldOff size={14} />
+                    <span>Desactivar Protección 2FA</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
