@@ -66,6 +66,12 @@ const Security2FAModalDialog = ({ onClose, onSuccess }) => {
       const data = await setup2FA();
       setQrData(data);
     } catch (err) {
+      if (err.status === 409 || err.message?.includes("ya está activo")) {
+        marcar2FAActivo();
+        setStep("active");
+        setIsLoadingQR(false);
+        return;
+      }
       console.error("Error al obtener credenciales 2FA:", err);
       setQrError(
         err.message ||

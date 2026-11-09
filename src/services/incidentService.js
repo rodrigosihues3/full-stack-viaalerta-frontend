@@ -9,10 +9,13 @@ export const normalizeIncidente = (inc) => {
   if (!inc) return null;
   const id = inc.id || inc._id;
   const ticketNumber =
+    inc.folio ||
     inc.ticketNumber ||
     inc.ticket_codigo ||
     inc.codigo_ticket ||
     `TKT-2026-${String(id).slice(-4)}`;
+  const usuarioId =
+    inc.usuario_creador_id || inc.usuario_id || inc.userId || null;
   const status = (inc.estado || inc.status || "REGISTRADO").toUpperCase();
   const severity = inc.severidad || inc.severity || "Media";
   const lat = Number(inc.latitud ?? inc.lat ?? -12.046374);
@@ -24,7 +27,10 @@ export const normalizeIncidente = (inc) => {
     inc.observaciones_ciudadano || inc.description || "";
   const photoUrl = inc.foto_url || inc.photoUrl || null;
   const createdAt =
-    inc.fecha_creacion || inc.createdAt || new Date().toISOString();
+    inc.creado_en ||
+    inc.fecha_creacion ||
+    inc.createdAt ||
+    new Date().toISOString();
 
   const categoryId =
     inc.categoria_id || inc.categoryId || inc.categoria?.id || "CAT-01";
@@ -64,7 +70,10 @@ export const normalizeIncidente = (inc) => {
     ...inc,
     id,
     ticketNumber,
+    folio: ticketNumber,
     ticket_codigo: ticketNumber,
+    usuario_id: usuarioId,
+    usuario_creador_id: usuarioId,
     status,
     estado: status,
     severity,
@@ -83,7 +92,8 @@ export const normalizeIncidente = (inc) => {
     foto_url: photoUrl,
     createdAt,
     fecha_creacion: createdAt,
-    citizenDni: inc.ciudadano_dni || inc.citizenDni || "",
+    creado_en: createdAt,
+    citizenDni: inc.ciudadano_dni || inc.creador_dni || inc.citizenDni || "",
     categoryId,
     categoria_id: categoryId,
     categoryName,
