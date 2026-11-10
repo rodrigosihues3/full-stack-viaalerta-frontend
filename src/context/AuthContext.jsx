@@ -61,7 +61,7 @@ export const AuthProvider = ({ children }) => {
           localStorage.setItem("via_alerta_user", JSON.stringify(freshUser));
         }
       })
-      .catch(() => {});
+      .catch(() => { });
     return () => {
       active = false;
     };
@@ -125,6 +125,16 @@ export const AuthProvider = ({ children }) => {
   const activar2FA = async (codigo) => {
     const result = await activate2FAService(codigo);
     marcar2FAActivo();
+    return result;
+  };
+
+  const desactivar2FA = async (codigo) => {
+    const result = await disable2FAService(codigo);
+    setUser((prev) => {
+      const actualizado = { ...prev, dos_pasos_activo: false };
+      localStorage.setItem("via_alerta_user", JSON.stringify(actualizado));
+      return actualizado;
+    });
     return result;
   };
 

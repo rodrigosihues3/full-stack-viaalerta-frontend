@@ -155,6 +155,14 @@ export const setup2FA = async () => {
     method: "POST",
   });
 
+  if (data?.secreto) {
+    try {
+      localStorage.setItem("via_alerta_2fa_secret", data.secreto);
+    } catch (e) {
+      console.error("Error al persistir semilla Base32:", e);
+    }
+  }
+
   return {
     secreto: data?.secreto,
     uri: data?.uri,
@@ -184,6 +192,35 @@ export const activate2FA = async (codigo) => {
       parsed.dos_pasos_activo = true;
       localStorage.setItem("via_alerta_user", JSON.stringify(parsed));
     }
+  } catch (err) {
+    console.error("Error al actualizar dos_pasos_activo en localStorage:", err);
+  }
+
+  return data;
+};
+
+/**
+ * Desactiva la autenticación en dos pasos (2FA).
+ * Realiza una llamada autenticada POST /api/auth/2fa/desactivar enviando el código TOTP de 6 dígitos.
+ * Actualiza el objeto en localStorage (via_alerta_user) fijando dos_pasos_activo = false.
+ * Retorna la respuesta del backend.
+ */
+export const disable2FA = async (codigo) => {
+  const data = await apiFetch("/api/auth/2fa/desactivar", {
+    method: "POST",
+    body: JSON.stringify({
+      codigo: String(codigo).trim(),
+    }),
+  });
+
+  try {
+    const rawStored = localStorage.getItem("via_alerta_user");
+    if (rawStored) {
+      const parsed = JSON.parse(rawStored);
+      parsed.dos_pasos_activo = false;
+      localStorage.setItem("via_alerta_user", JSON.stringify(parsed));
+    }
+    localStorage.removeItem("via_alerta_2fa_secret");
   } catch (err) {
     console.error("Error al actualizar dos_pasos_activo en localStorage:", err);
   }
