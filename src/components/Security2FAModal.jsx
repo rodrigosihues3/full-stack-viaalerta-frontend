@@ -27,14 +27,22 @@ import {
  * - Estado 3: Campo numérico de 6 dígitos con botón "Confirmar y Activar".
  * Al recibir HTTP 200 consolida el segundo factor y refleja el distintivo "2FA Activo".
  */
-const Security2FAModalDialog = ({ onClose, onSuccess }) => {
+const Security2FAModalDialog = ({
+  onClose,
+  onSuccess,
+  forceSetup = false,
+  initialStep = null,
+}) => {
   const { user, marcar2FAActivo, desactivar2FA } = useAuth();
 
   // Estados del flujo: 'initial' | 'qr' | 'confirm' | 'success' | 'active'
-  const [step, setStep] = useState(() =>
-    user?.dos_pasos_activo ? "active" : "initial"
+  const [step, setStep] = useState(() => {
+    if (forceSetup || initialStep === "qr") return "qr";
+    return user?.dos_pasos_activo ? "active" : "initial";
+  });
+  const [isLoadingQR, setIsLoadingQR] = useState(() =>
+    Boolean(forceSetup || initialStep === "qr")
   );
-  const [isLoadingQR, setIsLoadingQR] = useState(false);
   const [qrData, setQrData] = useState(null);
   const [qrError, setQrError] = useState(null);
 
@@ -46,41 +54,11 @@ const Security2FAModalDialog = ({ onClose, onSuccess }) => {
 
   // Estados para Desactivar 2FA
   const [confirmDisable, setConfirmDisable] = useState(false);
+  const [disableCode, setDisableCode] = useState("");
   const [isDisabling, setIsDisabling] = useState(false);
   const [disableError, setDisableError] = useState(null);
 
-  // Cerrar con la tecla Escape
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === "Escape" && !isSubmitting && !isDisabling) {
-        onClose?.();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isSubmitting, isDisabling, onClose]);
-
-  // Desactivar protección en dos pasos
-  const handleDisable2FA = async () => {
-    try {
-      setIsDisabling(true);
-      setDisableError(null);
-      await desactivar2FA();
-      setConfirmDisable(false);
-      setStep("initial");
-      onSuccess?.({ deactivated: true });
-    } catch (err) {
-      console.error("Error al desactivar 2FA:", err);
-      setDisableError(
-        err.message ||
-          "No fue posible desactivar la protección 2FA. Intente nuevamente."
-      );
-    } finally {
-      setIsDisabling(false);
-    }
-  };
-
-  // Iniciar configuración (Estado 1 -> Estado 2)
+  // Iniciar configuración (Estado 1 -> Estado 2) desde acción de usuario
   const handleStartSetup = async () => {
     setIsLoadingQR(true);
     setQrError(null);
@@ -101,10 +79,120 @@ const Security2FAModalDialog = ({ onClose, onSuccess }) => {
       console.error("Error al obtener credenciales 2FA:", err);
       setQrError(
         err.message ||
-          "No fue posible generar el código QR. Verifique su conexión al servidor e intente nuevamente."
+        "No fue posible generar el código QR. Verifique su conexión al servidor e intente nuevamente."
       );
     } finally {
       setIsLoadingQR(false);
+    }
+  };
+
+  // Cerrar con la tecla Escape
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape" && !isSubmitting && !isDisabling) {
+        onClose?.();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isSubmitting, isDisabling, onClose]);
+
+  // Si se solicita forzar configuración (re-sincronizar), consultar credenciales de inmediato
+  useEffect(() => {
+    if (!forceSetup && initialStep !== "qr") return;
+    let isMounted = true;
+    setup2FA()
+      .then((data) => {
+        if (isMounted) setQrData(data);
+      })
+      .catch((err) => {
+        if (!isMounted) return;
+        if (err.status === 409 || err.message?.includes("ya está activo")) {
+          marcar2FAActivo();
+          setStep("active");
+        } else {
+          setQrError(
+            err.message ||
+            "No fue posible generar el código QR. Verifique su conexión al servidor e intente nuevamente."
+          );
+        }
+      })
+      .finally(() => {
+        if (isMounted) setIsLoadingQR(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [forceSetup, initialStep, marcar2FAActivo]);
+
+  // Copiado de token JWT y clave Base32 en auditoría técnica
+  const [copiadoToken, setCopiadoToken] = useState(false);
+  const [copiadoSecret, setCopiadoSecret] = useState(false);
+
+  const tokenActivo =
+    typeof window !== "undefined"
+      ? localStorage.getItem("via_alerta_token") || ""
+      : "";
+
+  const secretActivo =
+    qrData?.secreto ||
+    (typeof window !== "undefined"
+      ? localStorage.getItem("via_alerta_2fa_secret")
+      : null) ||
+    "Consolidada en autenticador";
+
+  const handleCopiarToken = async () => {
+    if (!tokenActivo) return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(tokenActivo);
+      }
+      setCopiadoToken(true);
+      setTimeout(() => setCopiadoToken(false), 2200);
+    } catch (err) {
+      console.error("Error al copiar token JWT:", err);
+    }
+  };
+
+  const handleCopiarSecret = async () => {
+    if (!secretActivo || secretActivo === "Consolidada en autenticador") return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(secretActivo);
+      }
+      setCopiadoSecret(true);
+      setTimeout(() => setCopiadoSecret(false), 2200);
+    } catch (err) {
+      console.error("Error al copiar clave Base32:", err);
+    }
+  };
+
+  // Desactivar protección en dos pasos exigiendo código TOTP
+  const handleDisable2FA = async (e) => {
+    if (e) e.preventDefault();
+    const cleanCode = disableCode.trim();
+    if (cleanCode.length !== 6) {
+      setDisableError("Debe ingresar el código TOTP de 6 dígitos.");
+      return;
+    }
+
+    try {
+      setIsDisabling(true);
+      setDisableError(null);
+      await desactivar2FA(cleanCode);
+      setConfirmDisable(false);
+      setDisableCode("");
+      setStep("initial");
+      onSuccess?.({ deactivated: true });
+    } catch (err) {
+      console.error("Error al desactivar 2FA:", err);
+      setDisableError(
+        err.message ||
+        "Código de verificación incorrecto. Intente nuevamente."
+      );
+    } finally {
+      setIsDisabling(false);
     }
   };
 
@@ -161,7 +249,7 @@ const Security2FAModalDialog = ({ onClose, onSuccess }) => {
       console.error("Error al activar 2FA:", err);
       setSubmitError(
         err.message ||
-          "Código de verificación inválido o expirado. Verifique que la hora de su dispositivo esté sincronizada e intente de nuevo."
+        "Código de verificación inválido o expirado. Verifique que la hora de su dispositivo esté sincronizada e intente de nuevo."
       );
     } finally {
       setIsSubmitting(false);
@@ -191,7 +279,13 @@ const Security2FAModalDialog = ({ onClose, onSuccess }) => {
         {/* Cabecera del Modal */}
         <div className="flex items-center justify-between border-b border-slate-100 bg-[#081D30] px-5 py-4 text-white">
           <div className="flex items-center gap-2.5">
-            <div className="rounded-lg bg-blue-600/30 p-2 text-blue-400 border border-blue-500/30">
+            <div
+              className={`rounded-lg p-2 transition-colors ${
+                step === "active" || user?.dos_pasos_activo
+                  ? "bg-emerald-600 text-white border border-emerald-500/40"
+                  : "bg-blue-600/30 text-blue-400 border border-blue-500/30"
+              }`}
+            >
               <ShieldCheck size={20} />
             </div>
             <div>
@@ -291,18 +385,14 @@ const Security2FAModalDialog = ({ onClose, onSuccess }) => {
           {/* ESTADO: YA ACTIVO (VISTA INFORMATIVA / GESTIÓN)             */}
           {/* ========================================================= */}
           {step === "active" && (
-            <div className="space-y-5 text-center">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200">
-                <ShieldCheck size={32} />
-              </div>
-
+            <div className="space-y-4 text-center">
               <div>
-                <div className="mb-2 flex items-center justify-center gap-2">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
                     Estado Actual:
                   </span>
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-0.5 text-xs font-bold text-emerald-700">
-                    <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                     2FA Activo
                   </span>
                 </div>
@@ -315,48 +405,163 @@ const Security2FAModalDialog = ({ onClose, onSuccess }) => {
                 </p>
               </div>
 
-              <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-4 text-xs text-slate-700 text-left space-y-2">
-                <div className="flex items-center gap-2 text-emerald-800 font-semibold">
-                  <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
-                  <span>Protección TOTP consolidada</span>
+              {/* Ficha Técnica Demostrativa de Auditoría Criptográfica */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-3.5 text-left text-xs space-y-2.5 shadow-2xs">
+                <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+                  <div className="flex items-center gap-1.5 font-bold text-slate-800 text-[11px] uppercase tracking-wider">
+                    <Key size={13} className="text-blue-600" />
+                    <span>Auditoría Criptográfica</span>
+                  </div>
+                  <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 border border-emerald-300 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-800">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    Inspección OK
+                  </span>
                 </div>
-                <p className="text-[11px] text-slate-500 pl-6">
-                  Si cambió de teléfono o perdió el acceso a su app
-                  autenticadora, puede volver a sincronizar un nuevo código QR.
-                </p>
+
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-semibold">
+                      Estándar
+                    </span>
+                    <span className="font-mono font-bold text-slate-700">
+                      RFC 6238 (TOTP)
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-semibold">
+                      Algoritmo
+                    </span>
+                    <span className="font-mono font-bold text-slate-700">
+                      HMAC-SHA1
+                    </span>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-slate-400 block text-[10px] uppercase font-semibold">
+                      Intervalo Dinámico
+                    </span>
+                    <span className="font-mono text-slate-700">
+                      30 segundos (tolerancia ±30s)
+                    </span>
+                  </div>
+
+                  {/* Token de Sesión Completo Copiable */}
+                  <div className="col-span-2 pt-2 border-t border-slate-200/70">
+                    <div className="flex items-center justify-between gap-1 mb-1">
+                      <span className="text-slate-500 text-[10px] uppercase font-bold tracking-wider">
+                        Token de Sesión JWT (Completo)
+                      </span>
+                      <span className="rounded bg-blue-100 border border-blue-200 px-1.5 py-0.2 text-[9px] font-mono font-bold text-blue-800">
+                        HS256 - Etapa Completa
+                      </span>
+                    </div>
+                    <div className="relative mt-1">
+                      <div className="max-h-24 overflow-y-auto break-all rounded border border-slate-200 bg-white p-2 font-mono text-[11px] leading-relaxed text-slate-700 select-all pr-8">
+                        {tokenActivo || "No disponible"}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleCopiarToken}
+                        className="absolute top-1.5 right-1.5 rounded border border-slate-300 bg-white p-1 text-slate-500 shadow-sm hover:bg-slate-100 hover:text-slate-800 transition cursor-pointer"
+                        title="Copiar token JWT para jwt.io"
+                      >
+                        {copiadoToken ? (
+                          <Check size={14} className="text-emerald-600" />
+                        ) : (
+                          <Copy size={14} />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Clave Criptográfica Base32 de Configuración Manual */}
+                  <div className="col-span-2 pt-2 border-t border-slate-200/70">
+                    <div className="flex items-center justify-between gap-1 mb-1">
+                      <span className="text-slate-500 text-[10px] uppercase font-bold tracking-wider">
+                        Clave Criptográfica Base32 (Semilla)
+                      </span>
+                      {copiadoSecret && (
+                        <span className="text-[10px] text-emerald-600 font-bold">
+                          ¡Clave copiada!
+                        </span>
+                      )}
+                    </div>
+                    <div className="relative mt-1">
+                      <div className="break-all rounded border border-slate-200 bg-white p-2 font-mono text-[11px] font-bold tracking-wider text-slate-800 select-all pr-8">
+                        {secretActivo}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleCopiarSecret}
+                        className="absolute top-1.5 right-1.5 rounded border border-slate-300 bg-white p-1 text-slate-500 shadow-sm hover:bg-slate-100 hover:text-slate-800 transition cursor-pointer"
+                        title="Copiar clave manual Base32"
+                      >
+                        {copiadoSecret ? (
+                          <Check size={14} className="text-emerald-600" />
+                        ) : (
+                          <Copy size={14} />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {confirmDisable ? (
-                <div className="rounded-xl border border-red-200 bg-red-50/80 p-4 text-left space-y-3 animate-in fade-in">
+                <form
+                  onSubmit={handleDisable2FA}
+                  className="rounded-xl border border-red-200 bg-red-50/80 p-4 text-left space-y-3 animate-in fade-in"
+                >
                   <div className="flex items-start gap-2.5">
                     <AlertTriangle size={18} className="text-red-600 shrink-0 mt-0.5" />
                     <div>
                       <h4 className="text-xs font-bold text-red-900">
-                        ¿Desactivar protección en dos pasos?
+                        Confirmar Desactivación de Protección 2FA
                       </h4>
                       <p className="mt-1 text-[11px] text-red-700 leading-relaxed">
-                        Al desactivar 2FA, su cuenta dependerá únicamente de su contraseña para autenticarse y se revocará la clave criptográfica activa.
+                        Para desvincular la seguridad TOTP, ingrese el código de 6 dígitos generado por su aplicación autenticadora:
                       </p>
                     </div>
                   </div>
 
+                  <div className="py-1">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      pattern="[0-9]*"
+                      value={disableCode}
+                      onChange={(e) => {
+                        const clean = e.target.value.replace(/\D/g, "").slice(0, 6);
+                        setDisableCode(clean);
+                        if (disableError) setDisableError(null);
+                      }}
+                      placeholder="000000"
+                      autoFocus
+                      disabled={isDisabling}
+                      className="w-full rounded-xl border-2 border-red-300 bg-white px-3 py-2 text-center font-mono text-2xl font-extrabold tracking-[0.35em] text-slate-900 transition focus:border-red-600 focus:outline-hidden disabled:opacity-60"
+                    />
+                    <p className="mt-1 text-center text-[10px] text-slate-500">
+                      {disableCode.length}/6 dígitos ingresados
+                    </p>
+                  </div>
+
                   {disableError && (
-                    <div className="text-[11px] text-red-600 bg-red-100/80 p-2 rounded-lg border border-red-200">
+                    <div className="text-[11px] text-red-600 bg-red-100/90 p-2 rounded-lg border border-red-200 font-medium">
                       {disableError}
                     </div>
                   )}
 
                   <div className="flex items-center gap-2 pt-1">
                     <button
-                      type="button"
-                      disabled={isDisabling}
-                      onClick={handleDisable2FA}
-                      className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50 transition cursor-pointer shadow-xs"
+                      type="submit"
+                      disabled={disableCode.length !== 6 || isDisabling}
+                      className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer shadow-xs"
                     >
                       {isDisabling ? (
                         <>
                           <Loader2 size={14} className="animate-spin" />
-                          <span>Desactivando...</span>
+                          <span>Validando código...</span>
                         </>
                       ) : (
                         <>
@@ -370,6 +575,7 @@ const Security2FAModalDialog = ({ onClose, onSuccess }) => {
                       disabled={isDisabling}
                       onClick={() => {
                         setConfirmDisable(false);
+                        setDisableCode("");
                         setDisableError(null);
                       }}
                       className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
@@ -377,32 +583,24 @@ const Security2FAModalDialog = ({ onClose, onSuccess }) => {
                       Cancelar
                     </button>
                   </div>
-                </div>
+                </form>
               ) : (
                 <div className="space-y-2 pt-2">
-                  <div className="flex flex-col sm:flex-row gap-2.5">
-                    <button
-                      type="button"
-                      onClick={handleStartSetup}
-                      className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 active:scale-[0.98] transition cursor-pointer"
-                    >
-                      <RefreshCw size={15} />
-                      <span>Volver a Sincronizar / Nuevo QR</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={onClose}
-                      className="flex-1 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white hover:bg-slate-800 active:scale-[0.98] transition cursor-pointer"
-                    >
-                      Cerrar
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={handleStartSetup}
+                    className="w-full flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 active:scale-[0.98] transition cursor-pointer"
+                  >
+                    <RefreshCw size={15} />
+                    <span>Volver a Sincronizar / Nuevo QR</span>
+                  </button>
 
                   {/* Botón secundario sobrio para Desactivar Protección 2FA */}
                   <button
                     type="button"
                     onClick={() => {
                       setConfirmDisable(true);
+                      setDisableCode("");
                       setDisableError(null);
                     }}
                     className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-red-200 bg-red-50/50 py-2.5 text-xs font-semibold text-red-600 hover:bg-red-50 hover:border-red-300 active:scale-[0.98] transition cursor-pointer"
@@ -707,7 +905,20 @@ const Security2FAModalDialog = ({ onClose, onSuccess }) => {
   );
 };
 
-export const Security2FAModal = ({ isOpen, onClose, onSuccess }) => {
+export const Security2FAModal = ({
+  isOpen,
+  onClose,
+  onSuccess,
+  forceSetup = false,
+  initialStep = null,
+}) => {
   if (!isOpen) return null;
-  return <Security2FAModalDialog onClose={onClose} onSuccess={onSuccess} />;
+  return (
+    <Security2FAModalDialog
+      onClose={onClose}
+      onSuccess={onSuccess}
+      forceSetup={forceSetup}
+      initialStep={initialStep}
+    />
+  );
 };

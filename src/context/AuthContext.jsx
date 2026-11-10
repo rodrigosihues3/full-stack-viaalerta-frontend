@@ -95,13 +95,12 @@ export const AuthProvider = ({ children }) => {
     return result;
   };
 
-  const desactivar2FA = async () => {
-    const result = await disable2FAService();
+  const desactivar2FA = async (codigo) => {
+    const result = await disable2FAService(codigo);
     setUser((prev) => {
-      if (!prev) return prev;
-      const updated = { ...prev, dos_pasos_activo: false };
-      localStorage.setItem("via_alerta_user", JSON.stringify(updated));
-      return updated;
+      const actualizado = { ...prev, dos_pasos_activo: false };
+      localStorage.setItem("via_alerta_user", JSON.stringify(actualizado));
+      return actualizado;
     });
     return result;
   };

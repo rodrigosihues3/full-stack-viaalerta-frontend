@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import { Security2FAModal } from "../components/Security2FAModal";
 import {
@@ -39,6 +39,8 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
+  ChevronDown,
+  Check,
 } from "lucide-react";
 
 // Datos de contingencia inicial para garantizar operatividad continua
@@ -214,8 +216,13 @@ export const AdminDashboardPage = () => {
   const [viewUsers, setViewUsers] = useState("cards"); // "cards" | "table"
   const [pageUsers, setPageUsers] = useState(1);
 
+  // Dropdown de perfil
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
   // Modales
   const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
+  const [securityModalForceSetup, setSecurityModalForceSetup] = useState(false);
   const [entityModalOpen, setEntityModalOpen] = useState(false);
   const [editingEntity, setEditingEntity] = useState(null);
   const [notifyModalOpen, setNotifyModalOpen] = useState(false);
@@ -229,6 +236,17 @@ export const AdminDashboardPage = () => {
     setTimeout(() => {
       setToast(null);
     }, 3800);
+  }, []);
+
+  // Cierre del dropdown de perfil al hacer clic afuera
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   // Carga inicial de datos administrativos
@@ -257,13 +275,19 @@ export const AdminDashboardPage = () => {
           setEntities(
             entidadesRes.value.map((e) => ({
               ...e,
-              nombre: e.nombre || e.name || "Entidad Metropolitana",
-              sigla: e.sigla || e.acronym || "EM",
-              ruc: e.ruc || "20000000000",
+              id: e.id || e._id,
+              nombre_oficial: e.nombre_oficial || e.nombre || e.name || "",
+              nombre: e.nombre_oficial || e.nombre || e.name || "",
+              sigla: e.sigla || e.acronym || "",
+              ruc: e.ruc || "",
               tipo: e.tipo || (e.sigla === "MML" ? "MUNICIPALIDAD" : "EMPRESA_ESTATAL"),
-              jurisdiccion: e.jurisdiccion || e.jurisdiction || "Lima Metropolitana",
-              email: e.email || "despacho@entidad.gob.pe",
-              telefono: e.telefono || e.phone || "(01) 000-0000",
+              jurisdiccion: e.jurisdiccion || e.jurisdiccion_competencia || e.jurisdiction || "",
+              email_despacho: e.email_despacho || e.correo_despacho || e.email_contacto || e.email || "",
+              email: e.email_despacho || e.correo_despacho || e.email_contacto || e.email || "",
+              telefono: e.telefono || e.telefono_emergencia || e.central_telefonica || e.phone || "",
+              central_telefonica: e.telefono || e.telefono_emergencia || e.central_telefonica || "",
+              latitud: e.latitud || null,
+              longitud: e.longitud || null,
               activa: e.activa ?? e.activo ?? true,
             }))
           );
@@ -290,8 +314,8 @@ export const AdminDashboardPage = () => {
                 typeof u.fiabilidad_pct === "number"
                   ? u.fiabilidad_pct
                   : u.rol === "CIUDADANO"
-                  ? 85
-                  : null,
+                    ? 85
+                    : null,
               total_reportes: u.total_reportes ?? 0,
             }))
           );
@@ -324,25 +348,25 @@ export const AdminDashboardPage = () => {
 
     const mml = metricas?.desglose_entidades
       ? (metricas.desglose_entidades.mml ??
-         metricas.desglose_entidades.MML ??
-         metricas.desglose_entidades["Municipalidad"] ??
-         0)
+        metricas.desglose_entidades.MML ??
+        metricas.desglose_entidades["Municipalidad"] ??
+        0)
       : entities.filter(
-          (e) =>
-            e.tipo === "MUNICIPALIDAD" ||
-            (e.sigla || e.acronym || "").toUpperCase().includes("MML")
-        ).length;
+        (e) =>
+          e.tipo === "MUNICIPALIDAD" ||
+          (e.sigla || e.acronym || "").toUpperCase().includes("MML")
+      ).length;
 
     const sedapal = metricas?.desglose_entidades
       ? (metricas.desglose_entidades.sedapal ??
-         metricas.desglose_entidades.SEDAPAL ??
-         metricas.desglose_entidades["Sedapal"] ??
-         0)
+        metricas.desglose_entidades.SEDAPAL ??
+        metricas.desglose_entidades["Sedapal"] ??
+        0)
       : entities.filter(
-          (e) =>
-            e.tipo === "EMPRESA_ESTATAL" ||
-            (e.sigla || e.acronym || "").toUpperCase().includes("SEDAPAL")
-        ).length;
+        (e) =>
+          e.tipo === "EMPRESA_ESTATAL" ||
+          (e.sigla || e.acronym || "").toUpperCase().includes("SEDAPAL")
+      ).length;
 
     const totalOperadores =
       metricas?.total_operadores ??
@@ -476,8 +500,7 @@ export const AdminDashboardPage = () => {
         )
       );
       showToast(
-        `La entidad ${entity.sigla || entity.nombre} fue ${
-          nuevoEstado ? "habilitada" : "suspendida temporalmente"
+        `La entidad ${entity.sigla || entity.nombre} fue ${nuevoEstado ? "habilitada" : "suspendida temporalmente"
         }.`
       );
     } catch (err) {
@@ -497,8 +520,7 @@ export const AdminDashboardPage = () => {
         )
       );
       showToast(
-        `La cuenta de ${target.nombres} fue ${
-          nuevoEstado ? "reactivada" : "suspendida"
+        `La cuenta de ${target.nombres} fue ${nuevoEstado ? "reactivada" : "suspendida"
         }.`
       );
     } catch (err) {
@@ -527,25 +549,29 @@ export const AdminDashboardPage = () => {
     }
   };
 
-  // Iniciales del administrador
-  const adminName = user?.name || user?.nombres || "Super Administrador";
-  const userInitials = adminName
-    .split(" ")
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
+  // Determinación de borde superior cromático para Usuarios
+  const getUserTopBorder = (usr) => {
+    if (usr.rol === "OPERADOR_ENTIDAD") {
+      return "border-t-4 border-t-blue-500";
+    }
+    if (usr.rol === "SUPER_ADMIN") {
+      return "border-t-4 border-t-purple-600";
+    }
+    const fiab = usr.fiabilidad_pct ?? 100;
+    if (fiab >= 80) return "border-t-4 border-t-emerald-500";
+    if (fiab >= 50) return "border-t-4 border-t-amber-500";
+    return "border-t-4 border-t-red-500";
+  };
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-800">
       {/* Toast Flotante */}
       {toast && (
         <div
-          className={`fixed bottom-5 right-5 z-50 flex items-center gap-2.5 rounded-xl px-4 py-3 shadow-xl border text-xs font-semibold animate-in fade-in slide-in-from-bottom-2 ${
-            toast.type === "error"
-              ? "bg-red-900 text-red-100 border-red-700"
-              : "bg-slate-900 text-white border-slate-800"
-          }`}
+          className={`fixed bottom-5 right-5 z-50 flex items-center gap-2.5 rounded-xl px-4 py-3 shadow-xl border text-xs font-semibold animate-in fade-in slide-in-from-bottom-2 ${toast.type === "error"
+            ? "bg-red-900 text-red-100 border-red-700"
+            : "bg-slate-900 text-white border-slate-800"
+            }`}
         >
           {toast.type === "error" ? (
             <AlertTriangle size={16} className="text-red-400 shrink-0" />
@@ -557,10 +583,10 @@ export const AdminDashboardPage = () => {
       )}
 
       {/* ========================================================= */}
-      {/* A. NAVBAR INSTITUCIONAL SUPERADMIN                         */}
+      {/* 1. NAVBAR INSTITUCIONAL CON DROPDOWN DE PERFIL 2FA         */}
       {/* ========================================================= */}
-      <header className="sticky top-0 z-40 border-b border-slate-800 bg-[#081D30] px-4 sm:px-6 py-3 text-white shadow-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
+      <header className="bg-[#081D30] text-white border-b border-slate-800 shadow-md sticky top-0 z-40">
+        <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between">
           {/* Logotipo y Título Oficial */}
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
@@ -581,65 +607,133 @@ export const AdminDashboardPage = () => {
             </div>
           </div>
 
-          {/* Estado 2FA y Perfil */}
-          <div className="flex items-center gap-3 sm:gap-4">
-            {/* Píldora Interactiva 2FA */}
+          {/* Cluster de Perfil con Dropdown y Estado 2FA */}
+          <div className="relative" ref={dropdownRef}>
+            {/* Disparador del Dropdown */}
             <button
               type="button"
-              onClick={() => setIsSecurityModalOpen(true)}
-              className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold border transition cursor-pointer shadow-xs ${
-                user?.dos_pasos_activo
-                  ? "bg-emerald-950/40 text-emerald-300 border-emerald-600/40 hover:bg-emerald-900/50"
-                  : "bg-slate-800 text-amber-400 border-slate-700 hover:bg-slate-750"
-              }`}
-              title="Configuración de Autenticación en Dos Pasos"
+              onClick={() => setIsDropdownOpen((prev) => !prev)}
+              className="flex items-center gap-2.5 rounded-xl p-1.5 hover:bg-slate-800/80 transition cursor-pointer focus:outline-hidden"
+              aria-expanded={isDropdownOpen}
+              aria-haspopup="true"
             >
-              {user?.dos_pasos_activo ? (
-                <>
-                  <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>2FA Activo</span>
-                </>
-              ) : (
-                <>
-                  <span className="h-2 w-2 rounded-full bg-amber-400" />
-                  <span>Configurar 2FA</span>
-                </>
-              )}
-            </button>
-
-            {/* Identificador del Administrador */}
-            <div className="hidden md:flex items-center gap-2.5 border-l border-slate-800 pl-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-950 text-blue-300 border border-blue-700/60 text-xs font-extrabold tracking-wider">
-                {userInitials || "SA"}
-              </div>
-              <div className="text-left text-xs leading-tight">
-                <span className="block font-bold text-slate-100 truncate max-w-[140px]">
-                  {adminName}
+              {/* Textos del Administrador */}
+              <div className="hidden sm:block text-right text-xs leading-tight">
+                <span className="block font-bold text-slate-100">
+                  Administrador Central
                 </span>
-                <span className="block text-[10px] text-slate-400 font-mono truncate max-w-[140px]">
-                  {user?.email || "admin@viaalerta.gob.pe"}
+                <span className="block text-[10px] text-slate-400 font-mono">
+                  admin@viaalerta.gob.pe
                 </span>
               </div>
-            </div>
 
-            {/* Botón Salir */}
-            <button
-              type="button"
-              onClick={logout}
-              className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-red-700 hover:text-white cursor-pointer"
-              title="Cerrar sesión institucional"
-            >
-              <LogOut size={14} />
-              <span className="hidden sm:inline">Cerrar Sesión</span>
+              {/* Avatar Circular con Iniciales "AC" y Semáforo 2FA */}
+              <div
+                title={
+                  user?.dos_pasos_activo
+                    ? "2FA Activo: cuenta protegida"
+                    : "2FA Desactivado: cuenta vulnerable"
+                }
+                className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-bold text-xs shadow-xs transition-colors ${user?.dos_pasos_activo
+                  ? "bg-emerald-600 text-white"
+                  : "bg-red-600 text-white"
+                  }`}
+              >
+                <span>AC</span>
+
+                {/* Ícono de Estado 2FA */}
+                {user?.dos_pasos_activo ? (
+                  <span
+                    className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-emerald-700 text-white border-2 border-[#081D30]"
+                    title="2FA Activo: cuenta protegida"
+                  >
+                    <Check size={8} strokeWidth={3} />
+                  </span>
+                ) : (
+                  <span
+                    className="absolute -top-0.5 -right-0.5 flex h-3 w-3 rounded-full bg-red-400 border-2 border-[#081D30] animate-pulse"
+                    title="2FA Desactivado: cuenta vulnerable"
+                  />
+                )}
+              </div>
+
+              <ChevronDown
+                size={14}
+                className={`text-slate-400 transition-transform duration-200 ${isDropdownOpen ? "rotate-180" : ""
+                  }`}
+              />
             </button>
+
+            {/* Menú Desplegable (Popover) */}
+            {isDropdownOpen && (
+              <div className="absolute right-0 mt-2 w-64 rounded-xl border border-slate-200 bg-white shadow-xl z-50 text-slate-800 animate-popover overflow-hidden">
+                {/* Cabecera con datos del usuario y rol */}
+                <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+                  <p className="text-xs font-bold text-slate-900">
+                    Administrador Central
+                  </p>
+                  <p className="text-[11px] font-mono text-slate-500 truncate">
+                    admin@viaalerta.gob.pe
+                  </p>
+                </div>
+
+                {/* Acciones */}
+                <div className="p-1.5 space-y-0.5">
+                  {/* Ítem 1: Seguridad / 2FA */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsDropdownOpen(false);
+                      setSecurityModalForceSetup(false);
+                      setIsSecurityModalOpen(true);
+                    }}
+                    className="w-full flex items-center justify-between rounded-lg px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck size={16} className="text-slate-500" />
+                      <span>Seguridad / 2FA</span>
+                    </div>
+                    {user?.dos_pasos_activo ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        Activo
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-red-50 border border-red-200 px-2 py-0.5 text-[10px] font-bold text-red-700">
+                        <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+                        Inactivo
+                      </span>
+                    )}
+                  </button>
+
+                  {/* Separador */}
+                  <div className="my-1 border-t border-slate-100" />
+
+                  {/* Ítem 2: Cerrar Sesión */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsDropdownOpen(false);
+                      logout();
+                    }}
+                    className="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 transition cursor-pointer"
+                  >
+                    <LogOut size={16} />
+                    <span>Cerrar Sesión</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </header>
 
-      {/* Contenido Central */}
-      <main className="mx-auto w-full max-w-7xl flex-1 p-4 sm:p-6 space-y-6">
+      {/* ========================================================= */}
+      {/* CUERPO PRINCIPAL ALINEADO AL PÍXEL                         */}
+      {/* ========================================================= */}
+      <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 flex-1 space-y-6">
         {/* ========================================================= */}
-        {/* B. TARJETAS KPI DE GOBERNANZA                              */}
+        {/* TARJETAS KPI DE GOBERNANZA                                */}
         {/* ========================================================= */}
         <section className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
           {/* Card 1: Entidades Registradas */}
@@ -711,19 +805,18 @@ export const AdminDashboardPage = () => {
                 {kpiData.fiabilidadGlobal}%
               </p>
               <span
-                className={`rounded-full px-2 py-0.5 text-[10px] font-bold border ${
-                  kpiData.fiabilidadGlobal >= 80
-                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                    : kpiData.fiabilidadGlobal >= 50
+                className={`rounded-full px-2 py-0.5 text-[10px] font-bold border ${kpiData.fiabilidadGlobal >= 80
+                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                  : kpiData.fiabilidadGlobal >= 50
                     ? "bg-amber-50 text-amber-700 border-amber-200"
                     : "bg-red-50 text-red-700 border-red-200"
-                }`}
+                  }`}
               >
                 {kpiData.fiabilidadGlobal >= 80
                   ? "Salud Óptima"
                   : kpiData.fiabilidadGlobal >= 50
-                  ? "Atención"
-                  : "En Riesgo"}
+                    ? "Atención"
+                    : "En Riesgo"}
               </span>
             </div>
             <p className="mt-1 text-[11px] font-medium text-slate-500">
@@ -733,18 +826,17 @@ export const AdminDashboardPage = () => {
         </section>
 
         {/* ========================================================= */}
-        {/* C. PESTAÑAS DE NAVEGACIÓN                                  */}
+        {/* PESTAÑAS DE NAVEGACIÓN                                    */}
         {/* ========================================================= */}
         <section className="rounded-2xl border border-slate-200 bg-white shadow-2xs overflow-hidden">
           <nav className="flex items-center gap-2 border-b border-slate-200 bg-slate-50/70 px-4 pt-2">
             <button
               type="button"
               onClick={() => setActiveTab("entidades")}
-              className={`flex items-center gap-2 border-b-2 px-4 py-3 text-xs sm:text-sm font-bold transition cursor-pointer ${
-                activeTab === "entidades"
-                  ? "border-[#081D30] text-[#081D30] bg-white rounded-t-lg -mb-[1px]"
-                  : "border-transparent text-slate-500 hover:text-slate-800"
-              }`}
+              className={`flex items-center gap-2 border-b-2 px-4 py-3 text-xs sm:text-sm font-bold transition cursor-pointer ${activeTab === "entidades"
+                ? "border-[#081D30] text-[#081D30] bg-white rounded-t-lg -mb-[1px]"
+                : "border-transparent text-slate-500 hover:text-slate-800"
+                }`}
             >
               <Building2 size={16} />
               <span>Directorio de Entidades Públicas</span>
@@ -756,11 +848,10 @@ export const AdminDashboardPage = () => {
             <button
               type="button"
               onClick={() => setActiveTab("usuarios")}
-              className={`flex items-center gap-2 border-b-2 px-4 py-3 text-xs sm:text-sm font-bold transition cursor-pointer ${
-                activeTab === "usuarios"
-                  ? "border-[#081D30] text-[#081D30] bg-white rounded-t-lg -mb-[1px]"
-                  : "border-transparent text-slate-500 hover:text-slate-800"
-              }`}
+              className={`flex items-center gap-2 border-b-2 px-4 py-3 text-xs sm:text-sm font-bold transition cursor-pointer ${activeTab === "usuarios"
+                ? "border-[#081D30] text-[#081D30] bg-white rounded-t-lg -mb-[1px]"
+                : "border-transparent text-slate-500 hover:text-slate-800"
+                }`}
             >
               <Users size={16} />
               <span>Padrón de Usuarios y Fiscalización</span>
@@ -772,7 +863,7 @@ export const AdminDashboardPage = () => {
 
           <div className="p-4 sm:p-6">
             {/* ===================================================== */}
-            {/* D. MÓDULO DE ENTIDADES PÚBLICAS                       */}
+            {/* MÓDULO DE ENTIDADES PÚBLICAS                          */}
             {/* ===================================================== */}
             {activeTab === "entidades" && (
               <div className="space-y-4">
@@ -819,11 +910,10 @@ export const AdminDashboardPage = () => {
                       <button
                         type="button"
                         onClick={() => setViewEntities("cards")}
-                        className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition cursor-pointer ${
-                          viewEntities === "cards"
-                            ? "bg-white text-slate-900 shadow-2xs"
-                            : "text-slate-500 hover:text-slate-800"
-                        }`}
+                        className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition cursor-pointer ${viewEntities === "cards"
+                          ? "bg-white text-slate-900 shadow-2xs"
+                          : "text-slate-500 hover:text-slate-800"
+                          }`}
                         title="Vista en Tarjetas"
                       >
                         <LayoutGrid size={14} />
@@ -832,11 +922,10 @@ export const AdminDashboardPage = () => {
                       <button
                         type="button"
                         onClick={() => setViewEntities("table")}
-                        className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition cursor-pointer ${
-                          viewEntities === "table"
-                            ? "bg-white text-slate-900 shadow-2xs"
-                            : "text-slate-500 hover:text-slate-800"
-                        }`}
+                        className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition cursor-pointer ${viewEntities === "table"
+                          ? "bg-white text-slate-900 shadow-2xs"
+                          : "text-slate-500 hover:text-slate-800"
+                          }`}
                         title="Vista en Tabla"
                       >
                         <TableIcon size={14} />
@@ -856,7 +945,7 @@ export const AdminDashboardPage = () => {
                   </div>
                 </div>
 
-                {/* Vista Cards / Grid */}
+                {/* Vista Cards / Grid de Entidades (Borde Superior Cromático) */}
                 {viewEntities === "cards" ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {isLoading ? (
@@ -873,11 +962,10 @@ export const AdminDashboardPage = () => {
                         return (
                           <article
                             key={ent.id}
-                            className={`flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-4 shadow-2xs transition hover:shadow-sm ${
-                              isMuni
-                                ? "border-l-4 border-l-amber-500"
-                                : "border-l-4 border-l-sky-500"
-                            }`}
+                            className={`flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-4 shadow-2xs transition hover:shadow-sm ${isMuni
+                              ? "border-t-4 border-t-amber-500"
+                              : "border-t-4 border-t-sky-500"
+                              }`}
                           >
                             <div className="space-y-3">
                               {/* Header Card */}
@@ -885,41 +973,37 @@ export const AdminDashboardPage = () => {
                                 <div className="flex flex-col">
                                   <div className="flex items-center gap-2">
                                     <span
-                                      className={`rounded-md px-2 py-0.5 text-[11px] font-mono font-bold border ${
-                                        isMuni
-                                          ? "bg-amber-50 text-amber-800 border-amber-200"
-                                          : "bg-sky-50 text-sky-800 border-sky-200"
-                                      }`}
+                                      className={`rounded-md px-2 py-0.5 text-[11px] font-mono font-bold border ${isMuni
+                                        ? "bg-amber-50 text-amber-800 border-amber-200"
+                                        : "bg-sky-50 text-sky-800 border-sky-200"
+                                        }`}
                                     >
                                       {ent.sigla || "ENT"}
                                     </span>
                                     <span
-                                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold border ${
-                                        isMuni
-                                          ? "bg-amber-50/70 text-amber-700 border-amber-200/60"
-                                          : "bg-sky-50/70 text-sky-700 border-sky-200/60"
-                                      }`}
+                                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold border ${isMuni
+                                        ? "bg-amber-50/70 text-amber-700 border-amber-200/60"
+                                        : "bg-sky-50/70 text-sky-700 border-sky-200/60"
+                                        }`}
                                     >
                                       {isMuni ? "Municipalidad" : "Empresa Estatal"}
                                     </span>
                                   </div>
                                   <h3 className="mt-1.5 text-xs font-bold text-slate-900 leading-snug line-clamp-2">
-                                    {ent.nombre || ent.name}
+                                    {ent.nombre_oficial || ent.nombre || "Sin denominación"}
                                   </h3>
                                 </div>
 
                                 {/* Estado Activa / Inactiva */}
                                 <span
-                                  className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold border ${
-                                    ent.activa
-                                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                      : "bg-slate-100 text-slate-600 border-slate-300"
-                                  }`}
+                                  className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold border ${ent.activa
+                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                    : "bg-slate-100 text-slate-600 border-slate-300"
+                                    }`}
                                 >
                                   <span
-                                    className={`h-1.5 w-1.5 rounded-full ${
-                                      ent.activa ? "bg-emerald-500" : "bg-slate-400"
-                                    }`}
+                                    className={`h-1.5 w-1.5 rounded-full ${ent.activa ? "bg-emerald-500" : "bg-slate-400"
+                                      }`}
                                   />
                                   {ent.activa ? "Activa" : "Inactiva"}
                                 </span>
@@ -929,26 +1013,38 @@ export const AdminDashboardPage = () => {
                               <div className="space-y-1.5 text-xs text-slate-600">
                                 <div className="flex items-center gap-1.5 font-mono text-[11px] text-slate-500">
                                   <span className="font-semibold text-slate-700">RUC:</span>
-                                  <span>{ent.ruc}</span>
+                                  <span>{ent.ruc || "No registrado"}</span>
                                 </div>
 
                                 <div className="flex items-start gap-1.5 text-[11px] text-slate-600">
                                   <MapPin size={13} className="shrink-0 text-slate-400 mt-0.5" />
                                   <span className="line-clamp-2">
-                                    {ent.jurisdiccion || ent.jurisdiction}
+                                    {ent.jurisdiccion || "Sin jurisdicción asignada"}
                                   </span>
                                 </div>
+
+                                {/* Coordenadas si existen */}
+                                {(ent.latitud && ent.longitud) && (
+                                  <div className="flex items-center gap-1.5 font-mono text-[10px] text-slate-600 bg-slate-100/90 px-2 py-1 rounded-md border border-slate-200">
+                                    <span className="font-bold text-slate-700">Coord:</span>
+                                    <span>Lat: {ent.latitud}, Lng: {ent.longitud}</span>
+                                  </div>
+                                )}
                               </div>
 
                               {/* Contacto */}
                               <div className="rounded-lg bg-slate-50 p-2 text-[11px] text-slate-600 space-y-1 font-mono border border-slate-100">
                                 <div className="flex items-center gap-1.5 truncate">
                                   <Mail size={12} className="text-slate-400 shrink-0" />
-                                  <span className="truncate">{ent.email}</span>
+                                  <span className="truncate">
+                                    {ent.email_despacho || ent.email_contacto || ent.email || "No asignado"}
+                                  </span>
                                 </div>
                                 <div className="flex items-center gap-1.5">
                                   <Phone size={12} className="text-slate-400 shrink-0" />
-                                  <span>{ent.telefono || ent.phone}</span>
+                                  <span>
+                                    {ent.telefono || ent.central_telefonica || "No registrado"}
+                                  </span>
                                 </div>
                               </div>
                             </div>
@@ -967,11 +1063,10 @@ export const AdminDashboardPage = () => {
                               <button
                                 type="button"
                                 onClick={() => handleToggleEntityStatus(ent)}
-                                className={`flex-1 flex items-center justify-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                                  ent.activa
-                                    ? "border-red-200 text-red-700 bg-red-50/50 hover:bg-red-50"
-                                    : "border-emerald-200 text-emerald-700 bg-emerald-50/50 hover:bg-emerald-50"
-                                }`}
+                                className={`flex-1 flex items-center justify-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer ${ent.activa
+                                  ? "border-red-200 text-red-700 bg-red-50/50 hover:bg-red-50"
+                                  : "border-emerald-200 text-emerald-700 bg-emerald-50/50 hover:bg-emerald-50"
+                                  }`}
                               >
                                 <Power size={13} />
                                 <span>{ent.activa ? "Desactivar" : "Habilitar"}</span>
@@ -1019,54 +1114,50 @@ export const AdminDashboardPage = () => {
                             return (
                               <tr key={ent.id} className="hover:bg-slate-50/80 transition">
                                 <td className="px-4 py-3 font-mono font-bold text-slate-700">
-                                  {ent.ruc}
+                                  {ent.ruc || "No registrado"}
                                 </td>
                                 <td className="px-4 py-3">
                                   <div className="flex items-center gap-2">
                                     <span
-                                      className={`rounded px-1.5 py-0.5 text-[10px] font-mono font-bold border ${
-                                        isMuni
-                                          ? "bg-amber-50 text-amber-800 border-amber-200"
-                                          : "bg-sky-50 text-sky-800 border-sky-200"
-                                      }`}
+                                      className={`rounded px-1.5 py-0.5 text-[10px] font-mono font-bold border ${isMuni
+                                        ? "bg-amber-50 text-amber-800 border-amber-200"
+                                        : "bg-sky-50 text-sky-800 border-sky-200"
+                                        }`}
                                     >
-                                      {ent.sigla}
+                                      {ent.sigla || "ENT"}
                                     </span>
                                     <span className="font-bold text-slate-900">
-                                      {ent.nombre || ent.name}
+                                      {ent.nombre_oficial || ent.nombre || "Sin denominación"}
                                     </span>
                                   </div>
                                 </td>
                                 <td className="px-4 py-3">
                                   <span
-                                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold border ${
-                                      isMuni
-                                        ? "bg-amber-50 text-amber-800 border-amber-200"
-                                        : "bg-sky-50 text-sky-800 border-sky-200"
-                                    }`}
+                                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold border ${isMuni
+                                      ? "bg-amber-50 text-amber-800 border-amber-200"
+                                      : "bg-sky-50 text-sky-800 border-sky-200"
+                                      }`}
                                   >
                                     {isMuni ? "Municipalidad" : "Empresa Estatal"}
                                   </span>
                                 </td>
                                 <td className="px-4 py-3 text-slate-600 max-w-xs truncate">
-                                  {ent.jurisdiccion || ent.jurisdiction}
+                                  {ent.jurisdiccion || "Sin jurisdicción asignada"}
                                 </td>
                                 <td className="px-4 py-3 font-mono text-[11px] text-slate-500">
-                                  <p>{ent.email}</p>
-                                  <p>{ent.telefono || ent.phone}</p>
+                                  <p>{ent.email_despacho || ent.email_contacto || ent.email || "No asignado"}</p>
+                                  <p>{ent.telefono || ent.central_telefonica || "No registrado"}</p>
                                 </td>
                                 <td className="px-4 py-3">
                                   <span
-                                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold border ${
-                                      ent.activa
-                                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                        : "bg-slate-100 text-slate-600 border-slate-300"
-                                    }`}
+                                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold border ${ent.activa
+                                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                      : "bg-slate-100 text-slate-600 border-slate-300"
+                                      }`}
                                   >
                                     <span
-                                      className={`h-1.5 w-1.5 rounded-full ${
-                                        ent.activa ? "bg-emerald-500" : "bg-slate-400"
-                                      }`}
+                                      className={`h-1.5 w-1.5 rounded-full ${ent.activa ? "bg-emerald-500" : "bg-slate-400"
+                                        }`}
                                     />
                                     {ent.activa ? "Activa" : "Inactiva"}
                                   </span>
@@ -1084,11 +1175,10 @@ export const AdminDashboardPage = () => {
                                     <button
                                       type="button"
                                       onClick={() => handleToggleEntityStatus(ent)}
-                                      className={`rounded p-1 transition ${
-                                        ent.activa
-                                          ? "text-slate-500 hover:bg-red-50 hover:text-red-600"
-                                          : "text-slate-500 hover:bg-emerald-50 hover:text-emerald-600"
-                                      }`}
+                                      className={`rounded p-1 transition ${ent.activa
+                                        ? "text-slate-500 hover:bg-red-50 hover:text-red-600"
+                                        : "text-slate-500 hover:bg-emerald-50 hover:text-emerald-600"
+                                        }`}
                                       title={ent.activa ? "Desactivar entidad" : "Habilitar entidad"}
                                     >
                                       <Power size={15} />
@@ -1146,7 +1236,7 @@ export const AdminDashboardPage = () => {
             )}
 
             {/* ===================================================== */}
-            {/* E. MÓDULO DE PADRÓN DE USUARIOS Y FISCALIZACIÓN       */}
+            {/* MÓDULO DE PADRÓN DE USUARIOS Y FISCALIZACIÓN          */}
             {/* ===================================================== */}
             {activeTab === "usuarios" && (
               <div className="space-y-4">
@@ -1194,11 +1284,10 @@ export const AdminDashboardPage = () => {
                       <button
                         type="button"
                         onClick={() => setViewUsers("cards")}
-                        className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition cursor-pointer ${
-                          viewUsers === "cards"
-                            ? "bg-white text-slate-900 shadow-2xs"
-                            : "text-slate-500 hover:text-slate-800"
-                        }`}
+                        className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition cursor-pointer ${viewUsers === "cards"
+                          ? "bg-white text-slate-900 shadow-2xs"
+                          : "text-slate-500 hover:text-slate-800"
+                          }`}
                         title="Vista en Tarjetas"
                       >
                         <LayoutGrid size={14} />
@@ -1207,11 +1296,10 @@ export const AdminDashboardPage = () => {
                       <button
                         type="button"
                         onClick={() => setViewUsers("table")}
-                        className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition cursor-pointer ${
-                          viewUsers === "table"
-                            ? "bg-white text-slate-900 shadow-2xs"
-                            : "text-slate-500 hover:text-slate-800"
-                        }`}
+                        className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition cursor-pointer ${viewUsers === "table"
+                          ? "bg-white text-slate-900 shadow-2xs"
+                          : "text-slate-500 hover:text-slate-800"
+                          }`}
                         title="Vista en Tabla"
                       >
                         <TableIcon size={14} />
@@ -1221,7 +1309,7 @@ export const AdminDashboardPage = () => {
                   </div>
                 </div>
 
-                {/* Vista Cards / Grid de Usuarios */}
+                {/* Vista Cards / Grid de Usuarios (Borde Superior Cromático) */}
                 {viewUsers === "cards" ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {isLoading ? (
@@ -1237,7 +1325,9 @@ export const AdminDashboardPage = () => {
                         return (
                           <article
                             key={usr.id}
-                            className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-4 shadow-2xs transition hover:shadow-sm"
+                            className={`flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-4 shadow-2xs transition hover:shadow-sm ${getUserTopBorder(
+                              usr
+                            )}`}
                           >
                             <div className="space-y-3">
                               {/* Header Card Usuario */}
@@ -1258,16 +1348,14 @@ export const AdminDashboardPage = () => {
 
                                 {/* Estado Activo / Suspendido */}
                                 <span
-                                  className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold border ${
-                                    usr.activo
-                                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                      : "bg-red-50 text-red-700 border-red-200"
-                                  }`}
+                                  className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold border ${usr.activo
+                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                    : "bg-red-50 text-red-700 border-red-200"
+                                    }`}
                                 >
                                   <span
-                                    className={`h-1.5 w-1.5 rounded-full ${
-                                      usr.activo ? "bg-emerald-500" : "bg-red-500"
-                                    }`}
+                                    className={`h-1.5 w-1.5 rounded-full ${usr.activo ? "bg-emerald-500" : "bg-red-500"
+                                      }`}
                                   />
                                   {usr.activo ? "Activo" : "Suspendido"}
                                 </span>
@@ -1303,13 +1391,12 @@ export const AdminDashboardPage = () => {
                                       Fiabilidad Ciudadana:
                                     </span>
                                     <span
-                                      className={`font-mono text-xs font-bold ${
-                                        fiab >= 80
-                                          ? "text-emerald-700"
-                                          : fiab >= 50
+                                      className={`font-mono text-xs font-bold ${fiab >= 80
+                                        ? "text-emerald-700"
+                                        : fiab >= 50
                                           ? "text-amber-700"
                                           : "text-red-700"
-                                      }`}
+                                        }`}
                                     >
                                       {fiab}%
                                     </span>
@@ -1318,13 +1405,12 @@ export const AdminDashboardPage = () => {
                                   {/* Barra de progreso visual */}
                                   <div className="h-2 w-full rounded-full bg-slate-200 overflow-hidden">
                                     <div
-                                      className={`h-full transition-all duration-300 ${
-                                        fiab >= 80
-                                          ? "bg-emerald-500"
-                                          : fiab >= 50
+                                      className={`h-full transition-all duration-300 ${fiab >= 80
+                                        ? "bg-emerald-500"
+                                        : fiab >= 50
                                           ? "bg-amber-500"
                                           : "bg-red-500"
-                                      }`}
+                                        }`}
                                       style={{ width: `${Math.min(100, Math.max(5, fiab))}%` }}
                                     />
                                   </div>
@@ -1332,19 +1418,18 @@ export const AdminDashboardPage = () => {
                                   {/* Etiqueta semántica */}
                                   <div className="flex items-center justify-between text-[10px]">
                                     <span
-                                      className={`font-bold ${
-                                        fiab >= 80
-                                          ? "text-emerald-700"
-                                          : fiab >= 50
+                                      className={`font-bold ${fiab >= 80
+                                        ? "text-emerald-700"
+                                        : fiab >= 50
                                           ? "text-amber-700"
                                           : "text-red-700"
-                                      }`}
+                                        }`}
                                     >
                                       {fiab >= 80
                                         ? "Alta fiabilidad"
                                         : fiab >= 50
-                                        ? "Atención / Reportes desestimados"
-                                        : "Baja fiabilidad / Posible reincidencia"}
+                                          ? "Atención / Reportes desestimados"
+                                          : "Baja fiabilidad / Posible reincidencia"}
                                     </span>
                                     <span className="text-slate-400">
                                       {usr.total_reportes} reportes
@@ -1363,38 +1448,66 @@ export const AdminDashboardPage = () => {
                               )}
                             </div>
 
-                            {/* Acciones Administrativas */}
-                            <div className="mt-4 flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
-                              <button
-                                type="button"
-                                onClick={() => handleOpenNotifyUser(usr)}
-                                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
-                              >
-                                <Bell size={13} className="text-amber-500" />
-                                <span>Notificar</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => handleToggleUserStatus(usr)}
-                                className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                                  usr.activo
+                            {/* Acciones Administrativas según Matriz de Roles */}
+                            <div className="mt-4 border-t border-slate-100 pt-3">
+                              {usr.rol === "SUPER_ADMIN" ? (
+                                <div className="w-full text-center py-2 px-2.5 rounded-lg bg-slate-100 border border-slate-200 text-[11px] font-semibold text-slate-600">
+                                  <span>Cuenta Raíz Metropolitana (No mutable)</span>
+                                </div>
+                              ) : usr.rol === "OPERADOR_ENTIDAD" ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleUserStatus(usr)}
+                                  className={`w-full flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer ${usr.activo
                                     ? "border-red-200 text-red-700 bg-red-50/50 hover:bg-red-50"
                                     : "border-emerald-200 text-emerald-700 bg-emerald-50/50 hover:bg-emerald-50"
-                                }`}
-                              >
-                                {usr.activo ? (
-                                  <>
-                                    <UserX size={13} />
-                                    <span>Suspender</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <UserCheck size={13} />
-                                    <span>Reactivar</span>
-                                  </>
-                                )}
-                              </button>
+                                    }`}
+                                >
+                                  {usr.activo ? (
+                                    <>
+                                      <UserX size={13} />
+                                      <span>Suspender</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <UserCheck size={13} />
+                                      <span>Reactivar</span>
+                                    </>
+                                  )}
+                                </button>
+                              ) : (
+                                <div className="flex items-center justify-between gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenNotifyUser(usr)}
+                                    className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                                  >
+                                    <Bell size={13} className="text-amber-500" />
+                                    <span>Notificar</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleUserStatus(usr)}
+                                    className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer ${usr.activo
+                                      ? "border-red-200 text-red-700 bg-red-50/50 hover:bg-red-50"
+                                      : "border-emerald-200 text-emerald-700 bg-emerald-50/50 hover:bg-emerald-50"
+                                      }`}
+                                  >
+                                    {usr.activo ? (
+                                      <>
+                                        <UserX size={13} />
+                                        <span>Suspender</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <UserCheck size={13} />
+                                        <span>Reactivar</span>
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           </article>
                         );
@@ -1464,30 +1577,28 @@ export const AdminDashboardPage = () => {
                                   {isCitizen ? (
                                     <div className="flex items-center gap-2">
                                       <span
-                                        className={`font-mono text-xs font-bold ${
-                                          fiab >= 80
-                                            ? "text-emerald-700"
-                                            : fiab >= 50
+                                        className={`font-mono text-xs font-bold ${fiab >= 80
+                                          ? "text-emerald-700"
+                                          : fiab >= 50
                                             ? "text-amber-700"
                                             : "text-red-700"
-                                        }`}
+                                          }`}
                                       >
                                         {fiab}%
                                       </span>
                                       <span
-                                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold border ${
-                                          fiab >= 80
-                                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                            : fiab >= 50
+                                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold border ${fiab >= 80
+                                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                          : fiab >= 50
                                             ? "bg-amber-50 text-amber-700 border-amber-200"
                                             : "bg-red-50 text-red-700 border-red-200"
-                                        }`}
+                                          }`}
                                       >
                                         {fiab >= 80
                                           ? "Alta"
                                           : fiab >= 50
-                                          ? "Atención"
-                                          : "Baja"}
+                                            ? "Atención"
+                                            : "Baja"}
                                       </span>
                                     </div>
                                   ) : (
@@ -1498,43 +1609,56 @@ export const AdminDashboardPage = () => {
                                 </td>
                                 <td className="px-4 py-3">
                                   <span
-                                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold border ${
-                                      usr.activo
-                                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                        : "bg-red-50 text-red-700 border-red-200"
-                                    }`}
+                                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold border ${usr.activo
+                                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                      : "bg-red-50 text-red-700 border-red-200"
+                                      }`}
                                   >
                                     <span
-                                      className={`h-1.5 w-1.5 rounded-full ${
-                                        usr.activo ? "bg-emerald-500" : "bg-red-500"
-                                      }`}
+                                      className={`h-1.5 w-1.5 rounded-full ${usr.activo ? "bg-emerald-500" : "bg-red-500"
+                                        }`}
                                     />
                                     {usr.activo ? "Activo" : "Suspendido"}
                                   </span>
                                 </td>
                                 <td className="px-4 py-3 text-right">
-                                  <div className="inline-flex items-center gap-1.5">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleOpenNotifyUser(usr)}
-                                      className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-amber-600 transition"
-                                      title="Enviar advertencia"
-                                    >
-                                      <Bell size={15} />
-                                    </button>
+                                  {usr.rol === "SUPER_ADMIN" ? (
+                                    <span className="text-[10px] text-slate-400 font-semibold">No mutable</span>
+                                  ) : usr.rol === "OPERADOR_ENTIDAD" ? (
                                     <button
                                       type="button"
                                       onClick={() => handleToggleUserStatus(usr)}
-                                      className={`rounded p-1 transition ${
-                                        usr.activo
-                                          ? "text-slate-500 hover:bg-red-50 hover:text-red-600"
-                                          : "text-slate-500 hover:bg-emerald-50 hover:text-emerald-600"
-                                      }`}
+                                      className={`rounded p-1 transition ${usr.activo
+                                        ? "text-slate-500 hover:bg-red-50 hover:text-red-600"
+                                        : "text-slate-500 hover:bg-emerald-50 hover:text-emerald-600"
+                                        }`}
                                       title={usr.activo ? "Suspender cuenta" : "Reactivar cuenta"}
                                     >
                                       {usr.activo ? <UserX size={15} /> : <UserCheck size={15} />}
                                     </button>
-                                  </div>
+                                  ) : (
+                                    <div className="inline-flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenNotifyUser(usr)}
+                                        className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-amber-600 transition"
+                                        title="Enviar advertencia"
+                                      >
+                                        <Bell size={15} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleToggleUserStatus(usr)}
+                                        className={`rounded p-1 transition ${usr.activo
+                                          ? "text-slate-500 hover:bg-red-50 hover:text-red-600"
+                                          : "text-slate-500 hover:bg-emerald-50 hover:text-emerald-600"
+                                          }`}
+                                        title={usr.activo ? "Suspender cuenta" : "Reactivar cuenta"}
+                                      >
+                                        {usr.activo ? <UserX size={15} /> : <UserCheck size={15} />}
+                                      </button>
+                                    </div>
+                                  )}
                                 </td>
                               </tr>
                             );
@@ -1621,7 +1745,11 @@ export const AdminDashboardPage = () => {
       {/* ========================================================= */}
       <Security2FAModal
         isOpen={isSecurityModalOpen}
-        onClose={() => setIsSecurityModalOpen(false)}
+        forceSetup={securityModalForceSetup}
+        onClose={() => {
+          setIsSecurityModalOpen(false);
+          setSecurityModalForceSetup(false);
+        }}
         onSuccess={() => {
           showToast("Configuración de seguridad 2FA actualizada correctamente.");
         }}
@@ -1631,39 +1759,122 @@ export const AdminDashboardPage = () => {
 };
 
 /**
- * Modal de Creación / Edición de Entidad Pública.
+ * Modal de Creación / Edición de Entidad Pública con validaciones estrictas.
  */
 const EntityFormModal = ({ isOpen, initialData, onClose, onSave }) => {
   const [formData, setFormData] = useState({
-    nombre: initialData?.nombre || initialData?.name || "",
+    nombre: initialData?.nombre_oficial || initialData?.nombre || initialData?.name || "",
     sigla: initialData?.sigla || initialData?.acronym || "",
     ruc: initialData?.ruc || "",
     tipo: initialData?.tipo || "MUNICIPALIDAD",
-    jurisdiccion: initialData?.jurisdiccion || initialData?.jurisdiction || "",
-    email: initialData?.email || "",
-    telefono: initialData?.telefono || initialData?.phone || "",
+    jurisdiccion: initialData?.jurisdiccion || initialData?.jurisdiccion_competencia || initialData?.jurisdiction || "",
+    email: initialData?.email_despacho || initialData?.email || initialData?.correo_despacho || "",
+    telefono: initialData?.telefono || initialData?.central_telefonica || initialData?.telefono_emergencia || initialData?.phone || "",
+    latitud: initialData?.latitud || "",
+    longitud: initialData?.longitud || "",
   });
-  const [error, setError] = useState("");
+
+  const [touched, setTouched] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [obteniendoGps, setObteniendoGps] = useState(false);
+
+  const handleObtenerUbicacion = () => {
+    if (!navigator.geolocation) {
+      alert("No se pudo obtener la geolocalización: El navegador no soporta geolocalización.");
+      return;
+    }
+    setObteniendoGps(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setFormData((prev) => ({
+          ...prev,
+          latitud: pos.coords.latitude.toFixed(6),
+          longitud: pos.coords.longitude.toFixed(6),
+        }));
+        setObteniendoGps(false);
+      },
+      (err) => {
+        setObteniendoGps(false);
+        alert("No se pudo obtener la geolocalización: " + err.message);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  // Reglas de validación estrictas
+  const errors = useMemo(() => {
+    const errs = {};
+
+    // nombre_oficial: Mínimo 5 caracteres
+    if (!formData.nombre.trim()) {
+      errs.nombre = "La razón social o nombre oficial es obligatoria.";
+    } else if (formData.nombre.trim().length < 5) {
+      errs.nombre = "El nombre oficial debe contener al menos 5 caracteres.";
+    }
+
+    // sigla: Mínimo 2 caracteres
+    if (!formData.sigla.trim()) {
+      errs.sigla = "La sigla es obligatoria.";
+    } else if (formData.sigla.trim().length < 2) {
+      errs.sigla = "La sigla debe contener al menos 2 caracteres.";
+    }
+
+    // ruc: Exactamente 11 dígitos numéricos
+    if (!formData.ruc.trim()) {
+      errs.ruc = "El RUC institucional es obligatorio.";
+    } else if (!/^\d{11}$/.test(formData.ruc.trim())) {
+      errs.ruc = "El RUC debe contar con exactamente 11 dígitos numéricos.";
+    }
+
+    // jurisdiccion: Mínimo 3 caracteres
+    if (!formData.jurisdiccion.trim()) {
+      errs.jurisdiccion = "La jurisdicción o competencia técnica es obligatoria.";
+    } else if (formData.jurisdiccion.trim().length < 3) {
+      errs.jurisdiccion = "La jurisdicción debe contener al menos 3 caracteres.";
+    }
+
+    // email_contacto: Si se ingresa, validar formato de correo electrónico
+    if (
+      formData.email.trim() &&
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())
+    ) {
+      errs.email = "Ingrese un correo electrónico de despacho válido.";
+    }
+
+    return errs;
+  }, [formData]);
+
+  const isFormValid = Object.keys(errors).length === 0;
 
   if (!isOpen) return null;
 
+  const handleBlur = (field) => {
+    setTouched((prev) => ({ ...prev, [field]: true }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.nombre.trim() || !formData.sigla.trim() || !formData.ruc.trim()) {
-      setError("Complete la razón social, sigla y RUC de la entidad.");
+    setTouched({
+      nombre: true,
+      sigla: true,
+      ruc: true,
+      jurisdiccion: true,
+      email: true,
+      telefono: true,
+    });
+
+    if (!isFormValid) {
+      setSubmitError("Por favor corrija los campos observados antes de continuar.");
       return;
     }
-    if (formData.ruc.trim().length !== 11) {
-      setError("El RUC debe contar con exactamente 11 dígitos numéricos.");
-      return;
-    }
+
     try {
       setSubmitting(true);
-      setError("");
+      setSubmitError("");
       await onSave(formData);
     } catch (err) {
-      setError(err.message || "Error al procesar el formulario.");
+      setSubmitError(err.message || "Error al procesar la entidad pública.");
     } finally {
       setSubmitting(false);
     }
@@ -1704,13 +1915,14 @@ const EntityFormModal = ({ isOpen, initialData, onClose, onSave }) => {
 
         {/* Formulario */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {error && (
+          {submitError && (
             <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700 animate-in fade-in">
               <AlertTriangle size={15} className="shrink-0 text-red-600" />
-              <span>{error}</span>
+              <span>{submitError}</span>
             </div>
           )}
 
+          {/* Nombre Oficial */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
               Razón Social / Nombre Oficial *
@@ -1719,13 +1931,26 @@ const EntityFormModal = ({ isOpen, initialData, onClose, onSave }) => {
               type="text"
               required
               value={formData.nombre}
-              onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
+              onBlur={() => handleBlur("nombre")}
+              onChange={(e) => {
+                setFormData({ ...formData, nombre: e.target.value });
+                if (touched.nombre) setSubmitError("");
+              }}
               placeholder="Ej. Municipalidad Metropolitana de Lima"
-              className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs text-slate-800 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+              className={`w-full rounded-xl border px-3.5 py-2 text-xs text-slate-800 outline-none transition focus:ring-1 ${touched.nombre && errors.nombre
+                ? "border-red-300 bg-red-50/20 focus:border-red-500 focus:ring-red-200"
+                : "border-slate-300 bg-white focus:border-blue-600 focus:ring-blue-600"
+                }`}
             />
+            {touched.nombre && errors.nombre && (
+              <p className="mt-1 text-[11px] text-red-600 font-medium">
+                {errors.nombre}
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Sigla */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
                 Sigla / Acrónimo *
@@ -1734,12 +1959,28 @@ const EntityFormModal = ({ isOpen, initialData, onClose, onSave }) => {
                 type="text"
                 required
                 value={formData.sigla}
-                onChange={(e) => setFormData({ ...formData, sigla: e.target.value.toUpperCase() })}
+                onBlur={() => handleBlur("sigla")}
+                onChange={(e) => {
+                  setFormData({
+                    ...formData,
+                    sigla: e.target.value.toUpperCase(),
+                  });
+                  if (touched.sigla) setSubmitError("");
+                }}
                 placeholder="Ej. MML, SEDAPAL"
-                className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-mono font-bold text-slate-800 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 uppercase"
+                className={`w-full rounded-xl border px-3.5 py-2 text-xs font-mono font-bold text-slate-800 outline-none uppercase transition focus:ring-1 ${touched.sigla && errors.sigla
+                  ? "border-red-300 bg-red-50/20 focus:border-red-500 focus:ring-red-200"
+                  : "border-slate-300 bg-white focus:border-blue-600 focus:ring-blue-600"
+                  }`}
               />
+              {touched.sigla && errors.sigla && (
+                <p className="mt-1 text-[11px] text-red-600 font-medium">
+                  {errors.sigla}
+                </p>
+              )}
             </div>
 
+            {/* RUC (11 dígitos numéricos estrictos) */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
                 RUC Oficial (11 dígitos) *
@@ -1748,16 +1989,29 @@ const EntityFormModal = ({ isOpen, initialData, onClose, onSave }) => {
                 type="text"
                 required
                 maxLength={11}
+                inputMode="numeric"
                 value={formData.ruc}
-                onChange={(e) =>
-                  setFormData({ ...formData, ruc: e.target.value.replace(/\D/g, "").slice(0, 11) })
-                }
+                onBlur={() => handleBlur("ruc")}
+                onChange={(e) => {
+                  const numOnly = e.target.value.replace(/\D/g, "").slice(0, 11);
+                  setFormData({ ...formData, ruc: numOnly });
+                  if (touched.ruc) setSubmitError("");
+                }}
                 placeholder="20131380951"
-                className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-mono font-bold text-slate-800 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                className={`w-full rounded-xl border px-3.5 py-2 text-xs font-mono font-bold text-slate-800 outline-none transition focus:ring-1 ${touched.ruc && errors.ruc
+                  ? "border-red-300 bg-red-50/20 focus:border-red-500 focus:ring-red-200"
+                  : "border-slate-300 bg-white focus:border-blue-600 focus:ring-blue-600"
+                  }`}
               />
+              {touched.ruc && errors.ruc && (
+                <p className="mt-1 text-[11px] text-red-600 font-medium">
+                  {errors.ruc}
+                </p>
+              )}
             </div>
           </div>
 
+          {/* Tipo Institucional */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
               Tipo Institucional *
@@ -1772,6 +2026,7 @@ const EntityFormModal = ({ isOpen, initialData, onClose, onSave }) => {
             </select>
           </div>
 
+          {/* Jurisdicción */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
               Jurisdicción y Competencia Técnica *
@@ -1780,12 +2035,25 @@ const EntityFormModal = ({ isOpen, initialData, onClose, onSave }) => {
               type="text"
               required
               value={formData.jurisdiccion}
-              onChange={(e) => setFormData({ ...formData, jurisdiccion: e.target.value })}
+              onBlur={() => handleBlur("jurisdiccion")}
+              onChange={(e) => {
+                setFormData({ ...formData, jurisdiccion: e.target.value });
+                if (touched.jurisdiccion) setSubmitError("");
+              }}
               placeholder="Ej. Vías Metropolitanas, Cercado de Lima, etc."
-              className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs text-slate-800 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+              className={`w-full rounded-xl border px-3.5 py-2 text-xs text-slate-800 outline-none transition focus:ring-1 ${touched.jurisdiccion && errors.jurisdiccion
+                ? "border-red-300 bg-red-50/20 focus:border-red-500 focus:ring-red-200"
+                : "border-slate-300 bg-white focus:border-blue-600 focus:ring-blue-600"
+                }`}
             />
+            {touched.jurisdiccion && errors.jurisdiccion && (
+              <p className="mt-1 text-[11px] text-red-600 font-medium">
+                {errors.jurisdiccion}
+              </p>
+            )}
           </div>
 
+          {/* Contacto: Email y Teléfono */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -1794,10 +2062,22 @@ const EntityFormModal = ({ isOpen, initialData, onClose, onSave }) => {
               <input
                 type="email"
                 value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                onBlur={() => handleBlur("email")}
+                onChange={(e) => {
+                  setFormData({ ...formData, email: e.target.value });
+                  if (touched.email) setSubmitError("");
+                }}
                 placeholder="operaciones@entidad.gob.pe"
-                className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs text-slate-800 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                className={`w-full rounded-xl border px-3.5 py-2 text-xs text-slate-800 outline-none transition focus:ring-1 ${touched.email && errors.email
+                  ? "border-red-300 bg-red-50/20 focus:border-red-500 focus:ring-red-200"
+                  : "border-slate-300 bg-white focus:border-blue-600 focus:ring-blue-600"
+                  }`}
               />
+              {touched.email && errors.email && (
+                <p className="mt-1 text-[11px] text-red-600 font-medium">
+                  {errors.email}
+                </p>
+              )}
             </div>
 
             <div>
@@ -1814,7 +2094,58 @@ const EntityFormModal = ({ isOpen, initialData, onClose, onSave }) => {
             </div>
           </div>
 
-          {/* Botones */}
+          {/* Campos de Geolocalización Institucional */}
+          <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <MapPin size={14} className="text-blue-600" />
+                <span>Geolocalización Institucional</span>
+              </label>
+              <button
+                type="button"
+                onClick={handleObtenerUbicacion}
+                disabled={obteniendoGps}
+                className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-[#081D30] px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
+              >
+                {obteniendoGps ? (
+                  <Loader2 size={14} className="animate-spin text-white" />
+                ) : (
+                  <MapPin size={14} className="text-amber-400" />
+                )}
+                <span>Capturar Coordenadas GPS</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  Latitud
+                </label>
+                <input
+                  type="text"
+                  disabled
+                  value={formData.latitud}
+                  placeholder="-12.046374"
+                  className="w-full rounded-xl border border-slate-300 bg-slate-100 px-3 py-1.5 font-mono text-xs text-slate-700 cursor-not-allowed outline-hidden"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  Longitud
+                </label>
+                <input
+                  type="text"
+                  disabled
+                  value={formData.longitud}
+                  placeholder="-77.042793"
+                  className="w-full rounded-xl border border-slate-300 bg-slate-100 px-3 py-1.5 font-mono text-xs text-slate-700 cursor-not-allowed outline-hidden"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Botones con bloqueo estricto si el formulario no es válido */}
           <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
             <button
               type="button"
@@ -1826,8 +2157,8 @@ const EntityFormModal = ({ isOpen, initialData, onClose, onSave }) => {
             </button>
             <button
               type="submit"
-              disabled={submitting}
-              className="flex items-center gap-1.5 rounded-xl bg-[#081D30] px-5 py-2.5 text-xs font-bold text-white shadow-md hover:bg-slate-800 active:scale-[0.98] transition cursor-pointer disabled:opacity-50"
+              disabled={!isFormValid || submitting}
+              className="flex items-center gap-1.5 rounded-xl bg-[#081D30] px-5 py-2.5 text-xs font-bold text-white shadow-md hover:bg-slate-800 active:scale-[0.98] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? (
                 <>
@@ -1849,15 +2180,21 @@ const EntityFormModal = ({ isOpen, initialData, onClose, onSave }) => {
 };
 
 /**
- * Modal de Advertencia / Notificación a Usuarios Ciudadanos u Operadores.
+ * Modal de Advertencia / Notificación a Usuarios con validaciones estrictas.
  */
 const NotificationModal = ({ isOpen, user, onClose, onSend }) => {
   const [selectedTemplate, setSelectedTemplate] = useState("desestimados");
   const [titulo, setTitulo] = useState(NOTIFICATION_TEMPLATES[0].titulo);
   const [mensaje, setMensaje] = useState(NOTIFICATION_TEMPLATES[0].mensaje);
   const [tipo, setTipo] = useState(NOTIFICATION_TEMPLATES[0].tipo);
+  const [touched, setTouched] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+
+  // Validaciones: titulo >= 4 caracteres y mensaje >= 10 caracteres
+  const isTituloValid = titulo.trim().length >= 4;
+  const isMensajeValid = mensaje.trim().length >= 10;
+  const isNotificationValid = isTituloValid && isMensajeValid;
 
   if (!isOpen) return null;
 
@@ -1871,10 +2208,13 @@ const NotificationModal = ({ isOpen, user, onClose, onSend }) => {
 
   const handleFormSubmit = async (e) => {
     e.preventDefault();
-    if (!titulo.trim() || !mensaje.trim()) {
-      setError("Debe proporcionar un título y un mensaje explicativo.");
+    setTouched({ titulo: true, mensaje: true });
+
+    if (!isNotificationValid) {
+      setError("Complete un título de al menos 4 caracteres y un mensaje explicativo de al menos 10 caracteres.");
       return;
     }
+
     try {
       setSubmitting(true);
       setError("");
@@ -1940,13 +2280,12 @@ const NotificationModal = ({ isOpen, user, onClose, onSend }) => {
                   Fiabilidad
                 </span>
                 <span
-                  className={`font-mono text-sm font-bold ${
-                    user.fiabilidad_pct >= 80
-                      ? "text-emerald-700"
-                      : user.fiabilidad_pct >= 50
+                  className={`font-mono text-sm font-bold ${user.fiabilidad_pct >= 80
+                    ? "text-emerald-700"
+                    : user.fiabilidad_pct >= 50
                       ? "text-amber-700"
                       : "text-red-700"
-                  }`}
+                    }`}
                 >
                   {user.fiabilidad_pct}%
                 </span>
@@ -1972,19 +2311,18 @@ const NotificationModal = ({ isOpen, user, onClose, onSend }) => {
                   key={tpl.id}
                   type="button"
                   onClick={() => handleSelectTemplate(tpl)}
-                  className={`text-left rounded-xl p-2.5 text-xs font-semibold border transition cursor-pointer ${
-                    selectedTemplate === tpl.id
-                      ? "border-blue-600 bg-blue-50/70 text-blue-900 shadow-2xs"
-                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                  }`}
+                  className={`text-left rounded-xl p-2.5 text-xs font-semibold border transition cursor-pointer ${selectedTemplate === tpl.id
+                    ? "border-blue-600 bg-blue-50/70 text-blue-900 shadow-2xs"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
                 >
                   <span className="block truncate font-bold">{tpl.label}</span>
                   <span className="text-[10px] text-slate-500 font-normal">
                     {tpl.tipo === "URGENTE"
                       ? "Urgente / Preventivo"
                       : tpl.tipo === "ADVERTENCIA"
-                      ? "Advertencia formal"
-                      : "Informativo"}
+                        ? "Advertencia formal"
+                        : "Informativo"}
                   </span>
                 </button>
               ))}
@@ -2006,11 +2344,10 @@ const NotificationModal = ({ isOpen, user, onClose, onSend }) => {
                   key={val}
                   type="button"
                   onClick={() => setTipo(val)}
-                  className={`flex-1 rounded-lg py-1.5 text-xs font-bold border transition cursor-pointer ${
-                    tipo === val
-                      ? `${style} ring-1 ring-offset-1 ring-blue-500`
-                      : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
-                  }`}
+                  className={`flex-1 rounded-lg py-1.5 text-xs font-bold border transition cursor-pointer ${tipo === val
+                    ? `${style} ring-1 ring-offset-1 ring-blue-500`
+                    : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                    }`}
                 >
                   {lbl}
                 </button>
@@ -2018,7 +2355,7 @@ const NotificationModal = ({ isOpen, user, onClose, onSend }) => {
             </div>
           </div>
 
-          {/* Asunto */}
+          {/* Asunto (Validación mínima 4 caracteres) */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
               Asunto / Título *
@@ -2027,13 +2364,25 @@ const NotificationModal = ({ isOpen, user, onClose, onSend }) => {
               type="text"
               required
               value={titulo}
-              onChange={(e) => setTitulo(e.target.value)}
-              placeholder="Asunto de la notificación"
-              className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs text-slate-800 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+              onBlur={() => setTouched((p) => ({ ...p, titulo: true }))}
+              onChange={(e) => {
+                setTitulo(e.target.value);
+                if (error) setError("");
+              }}
+              placeholder="Asunto de la notificación (mínimo 4 caracteres)"
+              className={`w-full rounded-xl border px-3.5 py-2 text-xs text-slate-800 outline-none transition focus:ring-1 ${touched.titulo && !isTituloValid
+                ? "border-red-300 bg-red-50/20 focus:border-red-500 focus:ring-red-200"
+                : "border-slate-300 bg-white focus:border-blue-600 focus:ring-blue-600"
+                }`}
             />
+            {touched.titulo && !isTituloValid && (
+              <p className="mt-1 text-[11px] text-red-600 font-medium">
+                El título debe contener al menos 4 caracteres.
+              </p>
+            )}
           </div>
 
-          {/* Mensaje */}
+          {/* Mensaje (Validación mínima 10 caracteres) */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
               Cuerpo del Mensaje *
@@ -2042,13 +2391,25 @@ const NotificationModal = ({ isOpen, user, onClose, onSend }) => {
               required
               rows={4}
               value={mensaje}
-              onChange={(e) => setMensaje(e.target.value)}
-              placeholder="Escriba los detalles de la notificación institucional..."
-              className="w-full rounded-xl border border-slate-300 bg-white p-3 text-xs text-slate-800 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 leading-relaxed resize-none"
+              onBlur={() => setTouched((p) => ({ ...p, mensaje: true }))}
+              onChange={(e) => {
+                setMensaje(e.target.value);
+                if (error) setError("");
+              }}
+              placeholder="Escriba los detalles de la notificación institucional (mínimo 10 caracteres)..."
+              className={`w-full rounded-xl border p-3 text-xs text-slate-800 outline-none leading-relaxed resize-none transition focus:ring-1 ${touched.mensaje && !isMensajeValid
+                ? "border-red-300 bg-red-50/20 focus:border-red-500 focus:ring-red-200"
+                : "border-slate-300 bg-white focus:border-blue-600 focus:ring-blue-600"
+                }`}
             />
+            {touched.mensaje && !isMensajeValid && (
+              <p className="mt-1 text-[11px] text-red-600 font-medium">
+                El mensaje debe contener al menos 10 caracteres explicativos.
+              </p>
+            )}
           </div>
 
-          {/* Acciones */}
+          {/* Acciones con bloqueo de botón estricto */}
           <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
             <button
               type="button"
@@ -2060,8 +2421,8 @@ const NotificationModal = ({ isOpen, user, onClose, onSend }) => {
             </button>
             <button
               type="submit"
-              disabled={submitting}
-              className="flex items-center gap-1.5 rounded-xl bg-[#081D30] px-5 py-2.5 text-xs font-bold text-white shadow-md hover:bg-slate-800 active:scale-[0.98] transition cursor-pointer disabled:opacity-50"
+              disabled={!isNotificationValid || submitting}
+              className="flex items-center gap-1.5 rounded-xl bg-[#081D30] px-5 py-2.5 text-xs font-bold text-white shadow-md hover:bg-slate-800 active:scale-[0.98] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? (
                 <>
