@@ -45,9 +45,24 @@ export const normalizeNotificacion = (notif) => {
 
 /**
  * Obtiene todas las notificaciones del ciudadano autenticado.
+ * Consulta prioritariamente /api/notificaciones con fallback transparente a /api/usuarios/notificaciones.
  */
 export const getNotificaciones = async () => {
-  const data = await apiFetch("/api/notificaciones");
+  let data;
+  try {
+    data = await apiFetch("/api/notificaciones");
+  } catch (err) {
+    if (err.status === 404 || err.status === 500) {
+      try {
+        data = await apiFetch("/api/usuarios/notificaciones");
+      } catch {
+        throw err;
+      }
+    } else {
+      throw err;
+    }
+  }
+
   const rawList = Array.isArray(data) ? data : data?.notificaciones || [];
   const notificaciones = rawList.map(normalizeNotificacion).filter(Boolean);
   const noLeidasCount =
@@ -65,19 +80,38 @@ export const getNotificaciones = async () => {
  * Marca una notificación individual como leída.
  */
 export const markNotificacionAsRead = async (id) => {
-  const data = await apiFetch(`/api/notificaciones/${id}/leer`, {
-    method: "PATCH",
-  });
-  return normalizeNotificacion(data);
+  try {
+    const data = await apiFetch(`/api/notificaciones/${id}/leer`, {
+      method: "PATCH",
+    });
+    return normalizeNotificacion(data);
+  } catch (err) {
+    if (err.status === 404) {
+      const data = await apiFetch(`/api/usuarios/notificaciones/${id}/leer`, {
+        method: "PATCH",
+      });
+      return normalizeNotificacion(data);
+    }
+    throw err;
+  }
 };
 
 /**
  * Marca todas las notificaciones del ciudadano como leídas.
  */
 export const markAllNotificacionesAsRead = async () => {
-  return await apiFetch("/api/notificaciones/leer-todas", {
-    method: "PATCH",
-  });
+  try {
+    return await apiFetch("/api/notificaciones/leer-todas", {
+      method: "PATCH",
+    });
+  } catch (err) {
+    if (err.status === 404) {
+      return await apiFetch("/api/usuarios/notificaciones/leer-todas", {
+        method: "PATCH",
+      });
+    }
+    throw err;
+  }
 };
 
 /**

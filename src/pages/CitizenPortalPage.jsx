@@ -9,12 +9,10 @@ import {
   ChevronRight,
   CircleDot,
   Clock,
-  Compass,
   Cone,
   Droplets,
   FileText,
   HelpCircle,
-  Home,
   Image,
   Layers,
   Loader2,
@@ -28,7 +26,6 @@ import {
   X,
 } from "lucide-react";
 import { Security2FAModal } from "../components/Security2FAModal";
-import { NotificationPanel } from "../components/NotificationPanel";
 import { RoadMonitorMap } from "../components/RoadMonitorMap";
 import {
   INCIDENT_CATEGORIES,
@@ -70,10 +67,6 @@ const REFERENCE_ZONES = [
   { label: "Lima Este (SJL / Ate)", lat: -12.006389, lng: -76.995278 },
   { label: "Lima Sur (Surco / Chorrillos)", lat: -12.146944, lng: -76.991111 },
 ];
-
-const RADIUS_OPTIONS = [1, 3, 5, 10, 25, 50];
-
-const STATUS_STEPS = ["REGISTRADO", "EVALUACION", "REPARACION", "RESUELTO"];
 
 const formatDateShort = (isoString) => {
   if (!isoString) return "";
@@ -138,7 +131,7 @@ export const CitizenPortalPage = () => {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isNotificationsLoading, setIsNotificationsLoading] = useState(false);
-  const [isNotificationPanelOpen, setIsNotificationPanelOpen] = useState(false);
+  const [notificationTab, setNotificationTab] = useState("todas"); // 'todas' | 'no_leidas'
   const [realtimeToast, setRealtimeToast] = useState(null);
 
   // Estado del Monitor Vial Georreferenciado
@@ -478,6 +471,14 @@ export const CitizenPortalPage = () => {
     return { total, enEvaluacion, enReparacion, resueltos };
   }, [citizenIncidents]);
 
+  // Filtrar notificaciones según la pestaña seleccionada ('todas' | 'no_leidas')
+  const displayedNotifications = useMemo(() => {
+    if (notificationTab === "no_leidas") {
+      return notifications.filter((n) => !n.is_read);
+    }
+    return notifications;
+  }, [notifications, notificationTab]);
+
   // Filtrar incidentes cercanos según el filtro de estado del Monitor Vial
   const filteredNearbyIncidents = useMemo(() => {
     return nearbyIncidents.filter((inc) => {
@@ -563,15 +564,19 @@ export const CitizenPortalPage = () => {
     }
   };
 
-  // Al seleccionar una notificación en el panel o en el dashboard
+  // Al seleccionar una notificación en la vista interna o aviso flotante
   const handleSelectNotification = async (notif) => {
     if (!notif) return;
     if (!notif.is_read) {
       handleMarkAsRead(notif.id);
     }
-    setIsNotificationPanelOpen(false);
     setRealtimeToast(null);
-    await openReportDetail(notif.report_id, notif.ticket_folio);
+    if (notif.report_id || notif.ticket_folio || notif.incidente_id) {
+      await openReportDetail(
+        notif.report_id || notif.incidente_id,
+        notif.ticket_folio
+      );
+    }
   };
 
   // Confirmar un incidente cercano de otro ciudadano (+1 confirmación)
@@ -682,77 +687,39 @@ export const CitizenPortalPage = () => {
   };
 
   return (
-    <div className="flex min-h-screen justify-center bg-slate-900 px-0 py-0 md:px-4 md:py-6">
-      <div className="relative flex min-h-screen w-full max-w-5xl flex-col bg-slate-50 shadow-2xl md:min-h-[840px] md:rounded-2xl md:overflow-hidden">
+    <div className="flex min-h-screen justify-center bg-slate-900 px-0 sm:px-4 sm:py-6">
+      <div className="relative flex min-h-screen w-full max-w-md flex-col bg-slate-50 shadow-2xl sm:min-h-[820px] sm:rounded-2xl sm:overflow-hidden">
         {/* ================================================================= */}
-        {/* BARRA SUPERIOR CIUDADANA (REDISEÑADA)                              */}
+        {/* BARRA SUPERIOR CIUDADANA (MOBILE-FIRST)                           */}
         {/* ================================================================= */}
-        <header className="sticky top-0 z-30 flex items-center justify-between bg-[#081D30] px-4 py-3.5 text-white shadow-md md:px-6">
-          <div className="flex items-center gap-6">
-            <button
-              type="button"
-              onClick={() => setCurrentScreen("home")}
-              className="flex items-center gap-2.5 text-left cursor-pointer"
-            >
-              <div className="rounded-lg bg-blue-600 p-2 shadow-xs">
-                <ShieldAlert size={19} />
-              </div>
-              <div>
-                <h1 className="text-sm sm:text-base font-bold tracking-tight">
-                  VíaAlerta
-                </h1>
-                <p className="text-[10px] text-slate-300">Portal Ciudadano</p>
-              </div>
-            </button>
-
-            {/* Navegación rápida en pantallas medianas y grandes */}
-            <nav className="hidden md:flex items-center gap-1 rounded-xl bg-slate-800/80 p-1 border border-slate-700/70">
-              <button
-                type="button"
-                onClick={() => setCurrentScreen("home")}
-                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                  currentScreen === "home"
-                    ? "bg-blue-600 text-white shadow-2xs"
-                    : "text-slate-300 hover:text-white hover:bg-slate-700/60"
-                }`}
-              >
-                <Home size={14} />
-                <span>Inicio</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setCurrentScreen("history")}
-                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                  currentScreen === "history"
-                    ? "bg-blue-600 text-white shadow-2xs"
-                    : "text-slate-300 hover:text-white hover:bg-slate-700/60"
-                }`}
-              >
-                <Clock size={14} />
-                <span>Mis Reportes ({citizenIncidents.length})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setCurrentScreen("monitor")}
-                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                  currentScreen === "monitor"
-                    ? "bg-blue-600 text-white shadow-2xs"
-                    : "text-slate-300 hover:text-white hover:bg-slate-700/60"
-                }`}
-              >
-                <Compass size={14} />
-                <span>Monitor Vial</span>
-              </button>
-            </nav>
-          </div>
+        <header className="sticky top-0 z-30 flex items-center justify-between bg-[#081D30] px-4 py-3.5 text-white shadow-md">
+          <button
+            type="button"
+            onClick={() => setCurrentScreen("home")}
+            className="flex items-center gap-2.5 text-left cursor-pointer"
+          >
+            <div className="rounded-lg bg-blue-600 p-2 shadow-xs">
+              <ShieldAlert size={19} />
+            </div>
+            <div>
+              <h1 className="text-sm sm:text-base font-bold tracking-tight">
+                VíaAlerta
+              </h1>
+              <p className="text-[10px] text-slate-300">Portal Ciudadano</p>
+            </div>
+          </button>
 
           {/* Controles Superiores: Campana de Notificaciones + Avatar de Iniciales */}
           <div className="flex items-center gap-2.5 sm:gap-3">
             {/* Botón de Notificaciones con Contador en Tiempo Real */}
             <button
               type="button"
-              onClick={() => setIsNotificationPanelOpen(true)}
-              className="relative flex h-10 w-10 items-center justify-center rounded-full border border-slate-700 bg-slate-800/90 text-slate-200 transition hover:bg-slate-700 hover:text-white cursor-pointer"
+              onClick={() => setCurrentScreen("notifications")}
+              className={`relative flex h-10 w-10 items-center justify-center rounded-full border transition cursor-pointer ${
+                currentScreen === "notifications"
+                  ? "border-blue-400 bg-blue-600 text-white ring-2 ring-blue-400/40"
+                  : "border-slate-700 bg-slate-800/90 text-slate-200 hover:bg-slate-700 hover:text-white"
+              }`}
               aria-label={
                 unreadCount > 0
                   ? `Notificaciones (${unreadCount} sin leer)`
@@ -768,14 +735,14 @@ export const CitizenPortalPage = () => {
               )}
             </button>
 
-            {/* Círculo con Iniciales del Ciudadano (Acceso al Detalle del Perfil) */}
+            {/* Círculo con Iniciales del Ciudadano (Acceso al Detalle del Perfil con Indicador 2FA) */}
             <button
               type="button"
               onClick={() => setCurrentScreen("profile")}
-              className={`flex h-10 w-10 items-center justify-center rounded-full border-2 text-xs font-extrabold tracking-wider text-white shadow-sm transition cursor-pointer ${
-                currentScreen === "profile"
-                  ? "border-blue-400 bg-blue-600 ring-2 ring-blue-400/40"
-                  : "border-slate-500 bg-linear-to-br from-blue-600 to-indigo-700 hover:border-white hover:scale-105"
+              className={`flex h-10 w-10 items-center justify-center rounded-full text-xs font-extrabold tracking-wider text-white shadow-sm transition hover:scale-105 cursor-pointer bg-linear-to-br from-blue-600 to-indigo-700 ${
+                user?.dos_pasos_activo
+                  ? "border-2 border-emerald-400 ring-2 ring-emerald-400/30"
+                  : "border-2 border-slate-500"
               }`}
               aria-label={`Abrir perfil de ${user?.name || "Ciudadano"}`}
               title="Mi Perfil"
@@ -831,401 +798,241 @@ export const CitizenPortalPage = () => {
         )}
 
         {/* ================================================================= */}
-        {/* PANTALLA PRINCIPAL: DASHBOARD CIUDADANO MEJORADO                  */}
+        {/* PANTALLA PRINCIPAL: DASHBOARD CIUDADANO MOBILE-FIRST              */}
         {/* ================================================================= */}
         {currentScreen === "home" && (
-          <main className="flex-1 space-y-6 p-4 sm:p-6">
-            {/* Banner de Acción Principal + Accesos Rápidos por Categoría */}
-            <section className="rounded-2xl bg-linear-to-r from-[#081D30] via-[#0d2b47] to-[#12385b] p-5 sm:p-6 text-white shadow-lg">
-              <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-                <div className="space-y-1.5 max-w-xl">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/20 border border-blue-400/30 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-blue-200">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Fiscalización Vial Georreferenciada
-                  </span>
-                  <h2 className="text-lg sm:text-xl font-extrabold tracking-tight">
+          <main className="flex-1 flex flex-col justify-between p-4 sm:p-6">
+            <div>
+              {/* Banner de Acción Principal + Accesos Rápidos por Categoría */}
+              <section className="rounded-2xl bg-linear-to-r from-[#081D30] via-[#0d2b47] to-[#12385b] p-5 text-white shadow-lg">
+                <div>
+                  <h2 className="text-lg font-extrabold tracking-tight text-white">
                     ¿Detectaste un incidente en la vía pública?
                   </h2>
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    Reporta deterioro asfáltico, veredas dañadas, buzones sin
-                    tapa o fugas de agua para su canalización inmediata a MML o
-                    Sedapal.
+                  <p className="mt-1 text-xs text-slate-300 leading-snug">
+                    Reporta daños de asfalto o redes para canalización inmediata a MML y Sedapal.
                   </p>
                 </div>
 
                 <button
                   type="button"
                   onClick={() => setCurrentScreen("select_category")}
-                  className="flex shrink-0 items-center justify-center gap-2.5 rounded-xl bg-red-600 px-5 py-3.5 text-xs sm:text-sm font-extrabold uppercase tracking-wider text-white shadow-lg transition hover:bg-red-500 active:scale-95 cursor-pointer"
+                  className="mt-4 flex w-full items-center justify-center gap-2.5 rounded-xl bg-red-600 py-3.5 text-xs sm:text-sm font-extrabold uppercase tracking-wider text-white shadow-lg transition hover:bg-red-500 active:scale-[0.98] cursor-pointer"
                 >
-                  <AlertTriangle size={20} />
+                  <AlertTriangle size={18} />
                   <span>Reportar Incidente</span>
                 </button>
-              </div>
 
-              {/* Atajos rápidos por tipo de incidente */}
-              <div className="mt-5 border-t border-white/10 pt-4">
-                <p className="mb-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-300">
-                  Acceso rápido por categoría frecuente:
-                </p>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  {INCIDENT_CATEGORIES.slice(0, 4).map((category) => {
-                    const Icon = iconByName[category.iconName] || AlertTriangle;
-                    return (
-                      <button
-                        key={category.id}
-                        type="button"
-                        onClick={() => selectCategory(category)}
-                        className="flex items-center gap-2.5 rounded-xl border border-white/10 bg-white/5 p-2.5 text-left transition hover:bg-white/15 hover:border-white/25 cursor-pointer"
-                      >
-                        <div className="rounded-lg bg-white/10 p-2 text-blue-300 shrink-0">
-                          <Icon size={16} />
-                        </div>
-                        <span className="line-clamp-2 text-[11px] font-semibold text-slate-100 leading-tight">
-                          {category.name}
-                        </span>
-                      </button>
-                    );
-                  })}
+                {/* Atajos rápidos por tipo de incidente (2x2 compacto e interactivo) */}
+                <div className="mt-4 border-t border-white/10 pt-3.5">
+                  <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-300">
+                    Acceso rápido por categoría frecuente:
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {INCIDENT_CATEGORIES.slice(0, 4).map((category) => {
+                      const Icon = iconByName[category.iconName] || AlertTriangle;
+                      return (
+                        <button
+                          key={category.id}
+                          type="button"
+                          onClick={() => selectCategory(category)}
+                          className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 p-2 text-left hover:bg-white/15 hover:border-white/25 active:scale-[0.97] transition cursor-pointer"
+                        >
+                          <div className="rounded-lg bg-white/10 p-1.5 text-blue-300 shrink-0">
+                            <Icon size={15} />
+                          </div>
+                          <span className="line-clamp-2 text-[11px] font-semibold text-slate-100 leading-tight">
+                            {category.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            </section>
+              </section>
 
-            {/* Resumen Estadístico de Mis Reportes (KPIs Personales) */}
-            <section aria-label="Resumen de mis reportes">
-              <div className="mb-2.5 flex items-center justify-between">
-                <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-700">
-                  Resumen de Mi Participación Ciudadana
-                </h3>
+              {/* Cuadrícula de 2 Tarjetas de Navegación */}
+              <div className="grid grid-cols-2 gap-3 mt-4">
+                {/* Tarjeta Mis Reportes */}
                 <button
                   type="button"
                   onClick={() => setCurrentScreen("history")}
-                  className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"
+                  className="flex flex-col items-start rounded-xl border border-slate-200 bg-white p-4 text-left shadow-2xs transition hover:border-blue-400 hover:shadow-xs cursor-pointer"
                 >
-                  Ver todos mis reportes →
+                  <div className="rounded-lg bg-blue-50 p-2 text-blue-600 mb-3">
+                    <Clock size={20} />
+                  </div>
+                  <span className="text-xs font-bold text-slate-800">Mis Reportes</span>
+                  <span className="text-[11px] text-slate-500">{citizenIncidents.length} registrados</span>
+                </button>
+
+                {/* Tarjeta Monitor Vial */}
+                <button
+                  type="button"
+                  onClick={() => setCurrentScreen("monitor")}
+                  className="flex flex-col items-start rounded-xl border border-slate-200 bg-white p-4 text-left shadow-2xs transition hover:border-emerald-400 hover:shadow-xs cursor-pointer"
+                >
+                  <div className="rounded-lg bg-emerald-50 p-2 text-emerald-600 mb-3">
+                    <Layers size={20} />
+                  </div>
+                  <span className="text-xs font-bold text-slate-800">Monitor Vial</span>
+                  <span className="text-[11px] text-slate-500">Lima Metropolitana</span>
                 </button>
               </div>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs">
-                  <span className="text-[11px] font-semibold text-slate-500">
-                    Total Reportados
-                  </span>
-                  <p className="mt-1 text-2xl font-extrabold text-[#081D30]">
-                    {citizenStats.total}
-                  </p>
-                  <span className="text-[10px] text-slate-400">
-                    Alertas enviadas
-                  </span>
-                </div>
-                <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3.5 shadow-2xs">
-                  <span className="text-[11px] font-semibold text-amber-800">
-                    En Revisión / Eval.
-                  </span>
-                  <p className="mt-1 text-2xl font-extrabold text-amber-700">
-                    {citizenStats.enEvaluacion}
-                  </p>
-                  <span className="text-[10px] text-amber-700/80">
-                    Recibidos o en evaluación
-                  </span>
-                </div>
-                <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-3.5 shadow-2xs">
-                  <span className="text-[11px] font-semibold text-blue-800">
-                    En Reparación
-                  </span>
-                  <p className="mt-1 text-2xl font-extrabold text-blue-700">
-                    {citizenStats.enReparacion}
-                  </p>
-                  <span className="text-[10px] text-blue-700/80">
-                    Con cuadrilla asignada
-                  </span>
-                </div>
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3.5 shadow-2xs">
-                  <span className="text-[11px] font-semibold text-emerald-800">
-                    Solucionados
-                  </span>
-                  <p className="mt-1 text-2xl font-extrabold text-emerald-700">
-                    {citizenStats.resueltos}
-                  </p>
-                  <span className="text-[10px] text-emerald-700/80">
-                    Intervención concluida
-                  </span>
-                </div>
-              </div>
-            </section>
-
-            {/* Grilla Principal del Dashboard: Seguimiento + Monitor Vial y Notificaciones */}
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-              {/* Columna Izquierda: Seguimiento y Actividad Reciente de Mis Reportes */}
-              <section className="space-y-4 lg:col-span-7">
-                <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-2xs">
-                  <div className="mb-4 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="rounded-lg bg-blue-50 p-2 text-blue-600">
-                        <Clock size={18} />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-slate-800">
-                          Seguimiento de Mis Reportes Recientes
-                        </h3>
-                        <p className="text-[11px] text-slate-500">
-                          Estado en tiempo real de tus últimas incidencias
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setCurrentScreen("history")}
-                      className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer"
-                    >
-                      Historial ({citizenIncidents.length})
-                    </button>
-                  </div>
-
-                  {isLoading ? (
-                    <div className="py-10 text-center text-xs text-slate-500">
-                      <Loader2
-                        size={20}
-                        className="mx-auto mb-2 animate-spin text-[#081D30]"
-                      />
-                      Cargando tus reportes...
-                    </div>
-                  ) : citizenIncidents.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
-                      <FileText
-                        size={28}
-                        className="mx-auto mb-2 text-slate-400"
-                      />
-                      <p className="text-xs font-bold text-slate-700">
-                        Aún no has registrado reportes viales
-                      </p>
-                      <p className="mt-1 text-[11px] text-slate-500">
-                        Usa el botón superior &ldquo;Reportar Incidente&rdquo;
-                        para registrar tu primera alerta georreferenciada.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {citizenIncidents.slice(0, 3).map((item) => {
-                        const status =
-                          INCIDENT_STATUS[item.status] ||
-                          INCIDENT_STATUS.REGISTRADO;
-                        const currentStepIdx = STATUS_STEPS.indexOf(
-                          item.status
-                        );
-
-                        return (
-                          <article
-                            key={item.id}
-                            onClick={() => openReportDetail(item)}
-                            className="group cursor-pointer rounded-xl border border-slate-200 bg-slate-50/60 p-3.5 transition hover:border-blue-300 hover:bg-white hover:shadow-xs"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="rounded bg-white px-2 py-0.5 font-mono text-[10px] font-bold text-slate-600 border border-slate-200">
-                                {item.ticketNumber}
-                              </span>
-                              <span
-                                className={`rounded border px-2 py-0.5 text-[10px] font-bold ${status.badge}`}
-                              >
-                                {status.label}
-                              </span>
-                            </div>
-
-                            <p className="mt-2 text-xs font-bold text-slate-800 group-hover:text-blue-700">
-                              {item.categoryName}
-                            </p>
-                            <p className="mt-0.5 text-[11px] text-slate-500 truncate">
-                              {item.address} · {item.district}
-                            </p>
-
-                            {/* Barra de progreso de etapas si no está desestimado */}
-                            {item.status !== "DESESTIMADO" && (
-                              <div className="mt-3 grid grid-cols-4 gap-1.5">
-                                {STATUS_STEPS.map((stepKey, idx) => {
-                                  const reached =
-                                    currentStepIdx >= idx &&
-                                    currentStepIdx !== -1;
-                                  return (
-                                    <div key={stepKey} className="space-y-1">
-                                      <div
-                                        className={`h-1.5 rounded-full ${
-                                          reached
-                                            ? item.status === "RESUELTO"
-                                              ? "bg-emerald-500"
-                                              : "bg-blue-600"
-                                            : "bg-slate-200"
-                                        }`}
-                                      />
-                                      <span
-                                        className={`block text-[9px] font-semibold ${
-                                          reached
-                                            ? "text-slate-700"
-                                            : "text-slate-400"
-                                        }`}
-                                      >
-                                        {INCIDENT_STATUS[stepKey]?.label}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-
-                            <div className="mt-2.5 flex items-center justify-between border-t border-slate-200/70 pt-2 text-[10px] text-slate-500">
-                              <span>{item.entityName}</span>
-                              <span className="font-semibold text-blue-600 group-hover:underline">
-                                Ver trazabilidad →
-                              </span>
-                            </div>
-                          </article>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </section>
-
-              {/* Columna Derecha: Monitor Vial Cercano + Últimas Notificaciones */}
-              <section className="space-y-4 lg:col-span-5">
-                {/* Tarjeta de Incidentes Cercanos (Monitor Vial en Vivo) */}
-                <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-2xs">
-                  <div className="mb-3 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="rounded-lg bg-emerald-50 p-2 text-emerald-600">
-                        <Layers size={18} />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-slate-800">
-                          Monitor Vial en Tu Zona
-                        </h3>
-                        <p className="text-[11px] text-slate-500">
-                          {monitorLocation.source === "gps"
-                            ? `Radio ${radiusKm} km desde tu GPS`
-                            : `Referencia: ${monitorLocation.label}`}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setCurrentScreen("monitor")}
-                      className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-2xs transition hover:bg-emerald-700 cursor-pointer"
-                    >
-                      Abrir Mapa
-                    </button>
-                  </div>
-
-                  {filteredNearbyIncidents.length === 0 ? (
-                    <p className="rounded-lg bg-slate-50 p-4 text-center text-xs text-slate-500">
-                      No se registran incidentes activos dentro del radio de{" "}
-                      {radiusKm} km.
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      {filteredNearbyIncidents.slice(0, 3).map((inc) => {
-                        const status =
-                          INCIDENT_STATUS[inc.status] ||
-                          INCIDENT_STATUS.REGISTRADO;
-                        const distLabel = formatDistanceLabel(inc.distanceKm);
-                        return (
-                          <div
-                            key={inc.id}
-                            onClick={() => {
-                              setSelectedMonitorIncident(inc);
-                              setCurrentScreen("monitor");
-                            }}
-                            className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 p-2.5 hover:border-emerald-400 hover:bg-emerald-50/20 transition cursor-pointer"
-                          >
-                            <div className="min-w-0">
-                              <p className="truncate text-xs font-bold text-slate-800">
-                                {inc.categoryName}
-                              </p>
-                              <p className="truncate text-[10px] text-slate-500">
-                                {inc.address} · {inc.district}
-                              </p>
-                            </div>
-                            <div className="text-right shrink-0">
-                              <span
-                                className={`inline-block rounded border px-1.5 py-0.5 text-[9px] font-bold ${status.badge}`}
-                              >
-                                {status.label}
-                              </span>
-                              {distLabel && (
-                                <span className="mt-0.5 block text-[10px] font-bold text-emerald-700">
-                                  {distLabel}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {/* Tarjeta de Notificaciones Recientes */}
-                <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-2xs">
-                  <div className="mb-3 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="rounded-lg bg-amber-50 p-2 text-amber-600">
-                        <Bell size={18} />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-slate-800">
-                          Notificaciones Recientes
-                        </h3>
-                        <p className="text-[11px] text-slate-500">
-                          {unreadCount > 0
-                            ? `${unreadCount} sin leer`
-                            : "Todas leídas"}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setIsNotificationPanelOpen(true)}
-                      className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"
-                    >
-                      Ver panel →
-                    </button>
-                  </div>
-
-                  {notifications.length === 0 ? (
-                    <p className="rounded-lg bg-slate-50 p-4 text-center text-xs text-slate-500">
-                      Aún no tienes notificaciones registradas.
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      {notifications.slice(0, 3).map((notif) => (
-                        <button
-                          key={notif.id}
-                          type="button"
-                          onClick={() => handleSelectNotification(notif)}
-                          className={`w-full rounded-lg border p-2.5 text-left transition cursor-pointer ${
-                            !notif.is_read
-                              ? "border-blue-200 bg-blue-50/50 hover:bg-blue-50"
-                              : "border-slate-200 bg-white hover:bg-slate-50"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="truncate text-xs font-bold text-slate-800">
-                              {notif.title}
-                            </span>
-                            {!notif.is_read && (
-                              <span className="h-2 w-2 shrink-0 rounded-full bg-blue-600" />
-                            )}
-                          </div>
-                          <p className="mt-1 line-clamp-2 text-[11px] text-slate-600">
-                            {notif.message}
-                          </p>
-                          <span className="mt-1 block text-[10px] text-slate-400">
-                            {formatNotificationDate(notif.created_at)}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </section>
             </div>
+
+            {/* Nota Institucional al Pie */}
+            <p className="mt-auto pt-6 pb-2 text-center text-[11px] leading-relaxed text-slate-400">
+              Canalización directa con las cuadrillas de MML y SEDAPAL vía REST y WebSockets.
+            </p>
+          </main>
+        )}
+
+        {/* ================================================================= */}
+        {/* PANTALLA: CENTRO DE NOTIFICACIONES (NATIVO MÓVIL)                */}
+        {/* ================================================================= */}
+        {currentScreen === "notifications" && (
+          <main className="flex-1 overflow-y-auto p-4 sm:p-5">
+            {/* Cabecera con BackButton y Título */}
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <BackButton onClick={() => setCurrentScreen("home")} />
+                <h2 className="truncate text-sm sm:text-base font-bold uppercase tracking-wide text-slate-800">
+                  Centro de Notificaciones
+                </h2>
+              </div>
+              {unreadCount > 0 && (
+                <button
+                  type="button"
+                  onClick={handleMarkAllAsRead}
+                  className="shrink-0 text-[11px] font-bold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                >
+                  Marcar leídas
+                </button>
+              )}
+            </div>
+
+            {/* Pestañas "Todas" y "No leídas" */}
+            <div className="mb-4 flex rounded-xl bg-slate-200/80 p-1 border border-slate-200">
+              <button
+                type="button"
+                onClick={() => setNotificationTab("todas")}
+                className={`flex-1 rounded-lg py-1.5 text-xs font-bold transition cursor-pointer ${
+                  notificationTab === "todas"
+                    ? "bg-white text-slate-900 shadow-2xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Todas ({notifications.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setNotificationTab("no_leidas")}
+                className={`flex-1 rounded-lg py-1.5 text-xs font-bold transition cursor-pointer ${
+                  notificationTab === "no_leidas"
+                    ? "bg-white text-slate-900 shadow-2xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                No leídas ({unreadCount})
+              </button>
+            </div>
+
+            {/* Lista de Notificaciones */}
+            {isNotificationsLoading ? (
+              <div className="py-12 text-center text-xs text-slate-500">
+                <Loader2
+                  size={20}
+                  className="mx-auto mb-2 animate-spin text-[#081D30]"
+                />
+                Consultando tus notificaciones...
+              </div>
+            ) : displayedNotifications.length === 0 ? (
+              <div className="py-16 text-center text-slate-400">
+                <Bell size={36} className="mx-auto mb-2 opacity-40" />
+                <p className="text-xs font-semibold text-slate-600">
+                  {notificationTab === "no_leidas"
+                    ? "No tienes notificaciones pendientes por leer"
+                    : "Aún no has recibido notificaciones"}
+                </p>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Las actualizaciones de tus reportes y avisos institucionales aparecerán aquí.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {displayedNotifications.map((notif) => {
+                  const isWarning =
+                    notif.tipo === "ADVERTENCIA" ||
+                    notif.tipo === "ALERTA" ||
+                    notif.tipo === "CRITICA" ||
+                    notif.title?.toUpperCase().includes("ADVERTENCIA") ||
+                    notif.title?.toUpperCase().includes("ALERTA");
+                  const isSuccess =
+                    notif.tipo === "RESUELTO" || notif.tipo === "SOLUCIONADO";
+
+                  return (
+                    <article
+                      key={notif.id}
+                      onClick={() => handleSelectNotification(notif)}
+                      className={`relative flex items-start gap-3 rounded-xl border p-3.5 text-left transition cursor-pointer ${
+                        !notif.is_read
+                          ? isWarning
+                            ? "border-amber-300 bg-amber-50/70 shadow-2xs hover:bg-amber-50"
+                            : "border-blue-200 bg-blue-50/60 shadow-2xs hover:bg-blue-50"
+                          : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/60 shadow-2xs"
+                      }`}
+                    >
+                      <div
+                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                          isWarning
+                            ? "bg-amber-500 text-white"
+                            : isSuccess
+                            ? "bg-emerald-600 text-white"
+                            : "bg-[#081D30] text-white"
+                        }`}
+                      >
+                        {isWarning ? (
+                          <AlertTriangle size={18} />
+                        ) : isSuccess ? (
+                          <CheckCircle2 size={18} />
+                        ) : (
+                          <Bell size={18} />
+                        )}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span
+                            className={`truncate text-xs font-bold ${
+                              !notif.is_read ? "text-slate-900" : "text-slate-700"
+                            }`}
+                          >
+                            {notif.title}
+                          </span>
+                          {!notif.is_read && (
+                            <span className="h-2 w-2 shrink-0 rounded-full bg-blue-600 ring-2 ring-blue-200" />
+                          )}
+                        </div>
+
+                        <p className="mt-1 text-xs text-slate-600 leading-snug break-words">
+                          {notif.message}
+                        </p>
+
+                        <div className="mt-2.5 flex items-center justify-between text-[10px] text-slate-400">
+                          <span>{formatNotificationDate(notif.created_at)}</span>
+                          {(notif.report_id || notif.ticket_folio) && (
+                            <span className="font-semibold text-blue-600 hover:underline">
+                              Ver reporte →
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
           </main>
         )}
 
@@ -1233,124 +1040,120 @@ export const CitizenPortalPage = () => {
         {/* PANTALLA: MI PERFIL (CON DNI DESDE BD + 2FA INTEGRADO)            */}
         {/* ================================================================= */}
         {currentScreen === "profile" && (
-          <main className="flex-1 p-4 sm:p-6 max-w-2xl w-full mx-auto">
-            <div className="mb-5 flex items-center gap-2">
+          <main className="flex-1 overflow-y-auto p-4 sm:p-5">
+            <div className="mb-4 flex items-center gap-2">
               <BackButton onClick={() => setCurrentScreen("home")} />
               <h2 className="text-sm font-bold uppercase tracking-wide text-slate-800">
                 Mi Perfil Ciudadano
               </h2>
             </div>
 
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs">
-              <div className="mb-6 flex items-center gap-4">
-                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-[#081D30] to-blue-700 text-xl font-extrabold tracking-wider text-white shadow-md">
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+              {/* A. Cabecera Centrada del Usuario */}
+              <div className="text-center">
+                <div
+                  className={`mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-linear-to-br from-[#081D30] to-blue-700 text-2xl font-extrabold tracking-wider text-white shadow-md mb-3 ${
+                    user?.dos_pasos_activo ? "ring-2 ring-emerald-500 ring-offset-2" : ""
+                  }`}
+                >
                   {userInitials}
                 </div>
-                <div>
-                  <p className="text-base font-extrabold text-slate-900">
-                    {user?.name}
-                  </p>
-                  <div className="mt-1 flex flex-wrap items-center gap-2">
-                    <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700">
-                      Ciudadano Registrado
+                <h3 className="text-center text-base font-extrabold text-slate-900">
+                  {user?.name}
+                </h3>
+                <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+                  <span className="border border-slate-300 bg-slate-100 text-slate-700 rounded-md px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase">
+                    Ciudadano Registrado
+                  </span>
+                  {user?.dos_pasos_activo ? (
+                    <span className="border border-emerald-300 bg-emerald-50 text-emerald-800 rounded-md px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase">
+                      2FA Activo
                     </span>
-                    {user?.dni && (
-                      <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 font-mono text-[10px] font-bold text-slate-700">
-                        DNI {user.dni}
-                      </span>
-                    )}
-                  </div>
+                  ) : (
+                    <span className="border border-amber-300 bg-amber-50 text-amber-800 rounded-md px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase">
+                      Sin 2FA Activo
+                    </span>
+                  )}
                 </div>
               </div>
 
-              <dl className="grid grid-cols-1 gap-4 border-t border-slate-100 pt-4 text-xs sm:grid-cols-2">
-                <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-100">
-                  <dt className="text-[11px] font-semibold text-slate-400 uppercase">
+              {/* B. Lista Tipográfica de Datos (Sin cajas grises pesadas) */}
+              <div className="mt-5 space-y-3.5 border-t border-slate-100 pt-4 text-left">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                     Nombres completos
-                  </dt>
-                  <dd className="mt-1 font-bold text-slate-800 text-sm">
+                  </p>
+                  <p className="mt-0.5 text-xs font-semibold text-slate-800">
                     {user?.name || "No especificado"}
-                  </dd>
+                  </p>
                 </div>
-
-                <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-100">
-                  <dt className="text-[11px] font-semibold text-slate-400 uppercase">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                     Documento Nacional de Identidad (DNI)
-                  </dt>
-                  <dd
+                  </p>
+                  <p
                     data-testid="profile-dni-value"
-                    className="mt-1 font-mono text-sm font-extrabold text-[#081D30]"
+                    className="mt-0.5 font-mono text-xs font-bold text-slate-800"
                   >
                     {user?.dni || "No especificado"}
-                  </dd>
+                  </p>
                 </div>
-
-                <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-100 sm:col-span-2">
-                  <dt className="text-[11px] font-semibold text-slate-400 uppercase">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                     Correo electrónico
-                  </dt>
-                  <dd className="mt-1 break-all font-bold text-slate-800 text-sm">
+                  </p>
+                  <p className="mt-0.5 text-xs font-semibold text-slate-800 break-all">
                     {user?.email}
-                  </dd>
+                  </p>
                 </div>
-              </dl>
+              </div>
 
-              {/* Módulo de Seguridad 2FA en Perfil */}
-              <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-3">
+              {/* C. Módulo 2FA como Fila de Acción (No tarjeta dentro de tarjeta) */}
+              <div className="mt-5 border-t border-slate-100 pt-4">
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                  <div className="flex items-center gap-2.5">
                     <div
-                      className={`p-2.5 rounded-lg border ${
+                      className={`p-2 rounded-lg border ${
                         user?.dos_pasos_activo
                           ? "bg-emerald-100 text-emerald-700 border-emerald-200"
                           : "bg-amber-100 text-amber-700 border-amber-200"
                       }`}
                     >
                       {user?.dos_pasos_activo ? (
-                        <ShieldCheck size={20} />
+                        <ShieldCheck size={18} />
                       ) : (
-                        <ShieldAlert size={20} />
+                        <ShieldAlert size={18} />
                       )}
                     </div>
                     <div>
-                      <p className="font-bold text-slate-800 text-sm">
-                        Autenticación en Dos Pasos (2FA)
+                      <p className="text-xs font-bold text-slate-800">
+                        Autenticación en Dos Pasos
                       </p>
-                      <p className="text-xs text-slate-500">
+                      <p className="text-[10px] text-slate-500">
                         {user?.dos_pasos_activo
-                          ? "Protección TOTP activa en tu cuenta ciudadana"
-                          : "Agrega un segundo factor de seguridad con código QR TOTP"}
+                          ? "Protección TOTP activa"
+                          : "Seguridad adicional requerida"}
                       </p>
                     </div>
                   </div>
-                  <span
-                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border shrink-0 ${
-                      user?.dos_pasos_activo
-                        ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                        : "bg-amber-100 text-amber-800 border-amber-300"
-                    }`}
+                  <button
+                    type="button"
+                    onClick={() => setIsSecurityModalOpen(true)}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-100 active:scale-95 transition cursor-pointer"
                   >
-                    {user?.dos_pasos_activo ? "2FA Activo" : "Inactivo"}
-                  </span>
+                    {user?.dos_pasos_activo ? "Gestionar" : "Configurar"}
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsSecurityModalOpen(true)}
-                  className="mt-3.5 w-full rounded-lg border border-slate-300 bg-white py-2.5 text-xs font-bold text-[#081D30] hover:bg-slate-100 active:scale-[0.99] transition shadow-2xs cursor-pointer"
-                >
-                  {user?.dos_pasos_activo
-                    ? "Gestionar / Reconfigurar 2FA"
-                    : "Configurar y Activar 2FA"}
-                </button>
               </div>
 
+              {/* D. Botón Cerrar Sesión */}
               <button
                 type="button"
                 onClick={logout}
-                className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 py-3 text-xs font-bold uppercase text-white shadow transition hover:bg-red-700 cursor-pointer"
+                className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 py-3 text-xs font-bold uppercase text-white shadow-sm transition hover:bg-red-700 active:scale-[0.98] cursor-pointer"
               >
                 <LogOut size={16} />
-                Cerrar Sesión
+                <span>Cerrar Sesión</span>
               </button>
             </section>
           </main>
@@ -1718,22 +1521,17 @@ export const CitizenPortalPage = () => {
                 <label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">
                   Radio de búsqueda
                 </label>
-                <div className="flex items-center gap-1">
-                  {RADIUS_OPTIONS.map((r) => (
-                    <button
-                      key={r}
-                      type="button"
-                      onClick={() => setRadiusKm(r)}
-                      className={`flex-1 rounded-lg border py-1.5 text-[11px] font-bold transition cursor-pointer ${
-                        radiusKm === r
-                          ? "border-[#081D30] bg-[#081D30] text-white"
-                          : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
-                      }`}
-                    >
-                      {r} km
-                    </button>
+                <select
+                  value={radiusKm}
+                  onChange={(e) => setRadiusKm(Number(e.target.value))}
+                  className="w-full rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-[#081D30]"
+                >
+                  {[1, 3, 5, 10, 25, 50].map((r) => (
+                    <option key={r} value={r}>
+                      Radio de {r} km
+                    </option>
                   ))}
-                </div>
+                </select>
               </div>
 
               <div>
@@ -1941,7 +1739,7 @@ export const CitizenPortalPage = () => {
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3">
                 {filteredNearbyIncidents.map((incident) => {
                   const status =
                     INCIDENT_STATUS[incident.status] ||
@@ -2049,23 +1847,57 @@ export const CitizenPortalPage = () => {
         {/* PANTALLA: HISTORIAL DE MIS REPORTES                               */}
         {/* ================================================================= */}
         {currentScreen === "history" && (
-          <main className="flex-1 overflow-y-auto p-4 sm:p-6">
-            <div className="mb-4 flex items-center justify-between">
-              <div className="flex items-center gap-2">
+          <main className="flex-1 overflow-y-auto p-4 sm:p-5">
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
                 <BackButton onClick={() => setCurrentScreen("home")} />
-                <div>
-                  <h2 className="text-sm sm:text-base font-bold uppercase tracking-wide text-slate-800">
-                    Mis Reportes Ciudadanos
-                  </h2>
-                  <p className="text-[11px] text-slate-500">
-                    Seleccione cualquier reporte para consultar su historial de
-                    atención
-                  </p>
-                </div>
+                <h2 className="truncate text-sm sm:text-base font-bold uppercase tracking-wide text-slate-800">
+                  Mis Reportes Ciudadanos
+                </h2>
               </div>
-              <span className="rounded-full bg-slate-200 px-2.5 py-1 text-xs font-bold text-slate-700">
+              <span className="shrink-0 rounded-full bg-slate-200 px-2.5 py-1 text-xs font-bold text-slate-700">
                 {citizenIncidents.length} reportes
               </span>
+            </div>
+
+            {/* Cinta compacta de estadísticas de participación ciudadana */}
+            <div className="mb-4 grid grid-cols-4 gap-2">
+              <div className="rounded-xl border border-slate-200 bg-white p-2 text-center shadow-2xs">
+                <span className="block text-[10px] font-semibold uppercase text-slate-500">
+                  Total
+                </span>
+                <p className="mt-0.5 text-base sm:text-lg font-extrabold text-[#081D30]">
+                  {citizenStats.total}
+                </p>
+                <span className="block text-[9px] text-slate-400">Enviados</span>
+              </div>
+              <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-2 text-center shadow-2xs">
+                <span className="block text-[10px] font-semibold uppercase text-amber-800">
+                  Eval.
+                </span>
+                <p className="mt-0.5 text-base sm:text-lg font-extrabold text-amber-700">
+                  {citizenStats.enEvaluacion}
+                </p>
+                <span className="block text-[9px] text-amber-700/80">Revisión</span>
+              </div>
+              <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-2 text-center shadow-2xs">
+                <span className="block text-[10px] font-semibold uppercase text-blue-800">
+                  Repar.
+                </span>
+                <p className="mt-0.5 text-base sm:text-lg font-extrabold text-blue-700">
+                  {citizenStats.enReparacion}
+                </p>
+                <span className="block text-[9px] text-blue-700/80">Cuadrilla</span>
+              </div>
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-2 text-center shadow-2xs">
+                <span className="block text-[10px] font-semibold uppercase text-emerald-800">
+                  Resuelt.
+                </span>
+                <p className="mt-0.5 text-base sm:text-lg font-extrabold text-emerald-700">
+                  {citizenStats.resueltos}
+                </p>
+                <span className="block text-[9px] text-emerald-700/80">Concluido</span>
+              </div>
             </div>
 
             {isLoading ? (
@@ -2084,7 +1916,7 @@ export const CitizenPortalPage = () => {
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="space-y-3">
                 {citizenIncidents.map((item) => {
                   const status =
                     INCIDENT_STATUS[item.status] || INCIDENT_STATUS.REGISTRADO;
@@ -2364,20 +2196,6 @@ export const CitizenPortalPage = () => {
             </div>
           </div>
         )}
-
-        {/* ================================================================= */}
-        {/* PANEL DE NOTIFICACIONES CIUDADANAS                                */}
-        {/* ================================================================= */}
-        <NotificationPanel
-          isOpen={isNotificationPanelOpen}
-          onClose={() => setIsNotificationPanelOpen(false)}
-          notifications={notifications}
-          unreadCount={unreadCount}
-          isLoading={isNotificationsLoading}
-          onMarkAsRead={handleMarkAsRead}
-          onMarkAllAsRead={handleMarkAllAsRead}
-          onSelectNotification={handleSelectNotification}
-        />
 
         {/* ================================================================= */}
         {/* MODAL DE SEGURIDAD 2FA (DESDE MI PERFIL)                          */}

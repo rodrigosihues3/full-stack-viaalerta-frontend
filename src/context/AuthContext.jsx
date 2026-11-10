@@ -3,6 +3,7 @@ import {
   login as loginService,
   verify2FA as verify2FAService,
   activate2FA as activate2FAService,
+  disable2FA as disable2FAService,
   getProfile,
   normalizeUser,
 } from "../services/authServices";
@@ -150,6 +151,7 @@ export const AuthProvider = ({ children }) => {
         completar2FA,
         cancelar2FA,
         logout,
+        desactivar2FA,
         marcar2FAActivo,
         activar2FA,
         refreshProfile,
