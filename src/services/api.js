@@ -1,4 +1,14 @@
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const ENV_API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const LOCAL_API_URL = "http://localhost:3000";
+
+// En desarrollo local (localhost / 127.0.0.1), conectar prioritariamente con el Backend local
+// en http://localhost:3000 sin alterar el archivo .env original.
+const isLocalHostRuntime =
+  typeof window !== "undefined" &&
+  (window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1");
+
+const BASE_URL = isLocalHostRuntime ? LOCAL_API_URL : ENV_API_URL;
 
 export const API_URL = BASE_URL;
 
@@ -21,10 +31,23 @@ export const apiFetch = async (endpoint, options = {}) => {
 
   const url = endpoint.startsWith("http") ? endpoint : `${BASE_URL}${endpoint}`;
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers,
+    });
+  } catch (networkErr) {
+    // Si el servidor local en puerto 3000 no estuviera encendido, usar VITE_API_URL como respaldo
+    if (isLocalHostRuntime && ENV_API_URL !== LOCAL_API_URL && !endpoint.startsWith("http")) {
+      response = await fetch(`${ENV_API_URL}${endpoint}`, {
+        ...options,
+        headers,
+      });
+    } else {
+      throw networkErr;
+    }
+  }
 
   // Manejo de respuesta vacía o no JSON
   const contentType = response.headers.get("content-type");

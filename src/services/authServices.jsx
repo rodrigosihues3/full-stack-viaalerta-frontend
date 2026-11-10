@@ -1,24 +1,92 @@
 import { apiFetch } from "./api";
 
+// DNIs registrados previamente con el orden apellido-nombre de RENIEC
+const LEGACY_INVERTED_RENIEC_DNIS = new Set(["74663928", "73977736", "72758727"]);
+
+/**
+ * Obtiene las iniciales del usuario a partir de la primera letra del primer nombre
+ * y la primera letra del primer apellido.
+ * Ejemplo: "Jean Franco" + "Dávila Grandez" -> "JD"
+ */
+export const getUserInitials = (user) => {
+  if (!user) return "US";
+
+  const cleanWordFirstChar = (str) => {
+    if (!str || typeof str !== "string") return "";
+    const firstWord = str.trim().split(/\s+/)[0] || "";
+    return firstWord.charAt(0).toUpperCase();
+  };
+
+  const nombres = (user.nombres || "").trim();
+  const apellidos = (user.apellidos || "").trim();
+
+  if (nombres && apellidos) {
+    const initialNombre = cleanWordFirstChar(nombres);
+    const initialApellido = cleanWordFirstChar(apellidos);
+    if (initialNombre && initialApellido) {
+      return `${initialNombre}${initialApellido}`;
+    }
+  }
+
+  const fullName = (user.name || nombres || user.email || "Usuario").trim();
+  const parts = fullName.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+  if (parts.length === 2) {
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  }
+  // Para nombres compuestos (ej. 3 o 4 palabras: PrimerNombre SegundoNombre PrimerApellido SegundoApellido)
+  const firstApellidoIndex = parts.length >= 4 ? 2 : 1;
+  return `${parts[0][0]}${parts[firstApellidoIndex][0]}`.toUpperCase();
+};
+
 /**
  * Normaliza la estructura del usuario para garantizar compatibilidad
- * tanto con el contrato del backend (rol, nombres, entidad_id)
- * como con las vistas del frontend (role, name, entityId).
+ * tanto con el contrato del backend (rol, nombres, entidad_id, dni)
+ * como con las vistas del frontend (role, name, entityId, initials).
  */
 export const normalizeUser = (user) => {
   if (!user) return null;
-  const fullName = user.nombres
-    ? `${user.nombres} ${user.apellidos || ""}`.trim()
+
+  const cleanDni = user.dni ? String(user.dni).trim() : "";
+  let rawNombres = (user.nombres || "").trim();
+  let rawApellidos = (user.apellidos || "").trim();
+
+  // Corregir orden visual si el registro histórico provino de full_name de RENIEC invertido
+  if (
+    cleanDni &&
+    LEGACY_INVERTED_RENIEC_DNIS.has(cleanDni) &&
+    rawNombres &&
+    rawApellidos &&
+    rawNombres === rawNombres.toUpperCase() &&
+    rawApellidos === rawApellidos.toUpperCase()
+  ) {
+    const temp = rawNombres;
+    rawNombres = rawApellidos;
+    rawApellidos = temp;
+  }
+
+  const fullName = rawNombres
+    ? `${rawNombres} ${rawApellidos}`.trim()
     : user.name || user.email || "Usuario";
+
+  const initials = getUserInitials({
+    nombres: rawNombres,
+    apellidos: rawApellidos,
+    name: fullName,
+    email: user.email,
+  });
 
   return {
     ...user,
     id: user.id || user._id,
-    dni: user.dni || "",
+    dni: cleanDni,
     email: user.email,
-    nombres: user.nombres || user.name || "",
-    apellidos: user.apellidos || "",
+    nombres: rawNombres || user.name || "",
+    apellidos: rawApellidos,
     name: fullName,
+    initials,
     rol: user.rol || user.role,
     role: user.rol || user.role,
     entidad_id: user.entidad_id || user.entityId || null,
@@ -126,15 +194,27 @@ export const activate2FA = async (codigo) => {
 /**
  * Registra un nuevo ciudadano ante el backend.
  */
-export const registerCitizen = async ({ dni, name, email, password, apellidos = "" }) => {
-  // Si no se pasaron apellidos separados, inferir del nombre
-  let nombres = name.trim();
+export const registerCitizen = async ({
+  dni,
+  name,
+  email,
+  password,
+  nombres: nombresExplicitos = "",
+  apellidos = "",
+}) => {
+  let nombres = nombresExplicitos.trim() || (name || "").trim();
   let apellidosFinal = apellidos.trim();
 
   if (!apellidosFinal && nombres.includes(" ")) {
-    const parts = nombres.split(" ");
-    nombres = parts.slice(0, Math.ceil(parts.length / 2)).join(" ");
-    apellidosFinal = parts.slice(Math.ceil(parts.length / 2)).join(" ");
+    const parts = nombres.split(/\s+/).filter(Boolean);
+    if (parts.length === 2) {
+      nombres = parts[0];
+      apellidosFinal = parts[1];
+    } else if (parts.length >= 3) {
+      // Asumir los últimos 2 tokens como apellidos paterno y materno
+      nombres = parts.slice(0, parts.length - 2).join(" ");
+      apellidosFinal = parts.slice(parts.length - 2).join(" ");
+    }
   }
 
   const data = await apiFetch("/api/auth/registro", {
@@ -149,8 +229,8 @@ export const registerCitizen = async ({ dni, name, email, password, apellidos = 
   });
 
   return {
-    mensaje: data.mensaje,
-    user: normalizeUser(data.user),
+    mensaje: data?.mensaje,
+    user: normalizeUser(data?.user || data),
   };
 };
 

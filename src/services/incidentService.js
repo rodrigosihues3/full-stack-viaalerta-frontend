@@ -9,6 +9,7 @@ export const normalizeIncidente = (inc) => {
   if (!inc) return null;
   const id = inc.id || inc._id;
   const ticketNumber =
+    inc.ticket_folio ||
     inc.folio ||
     inc.ticketNumber ||
     inc.ticket_codigo ||
@@ -103,6 +104,17 @@ export const normalizeIncidente = (inc) => {
     entityName,
     entidad_nombre: entityName,
     confirmaciones_count: inc.confirmaciones_count ?? inc.confirmaciones ?? 0,
+    distanceKm:
+      inc.distancia_km !== undefined && inc.distancia_km !== null
+        ? Number(inc.distancia_km)
+        : inc.distanceKm ?? null,
+    distancia_km:
+      inc.distancia_km !== undefined && inc.distancia_km !== null
+        ? Number(inc.distancia_km)
+        : inc.distanceKm ?? null,
+    esMio: Boolean(inc.es_mio ?? inc.esMio),
+    historial: Array.isArray(inc.historial) ? inc.historial : [],
+    confirmaciones: Array.isArray(inc.confirmaciones) ? inc.confirmaciones : [],
     aiTriage,
     ia_diagnostico: inc.ia_diagnostico || aiTriage?.detectedIssue || null,
     ia_confianza: inc.ia_confianza ?? null,
@@ -119,6 +131,97 @@ export const getIncidentes = async () => {
   const data = await apiFetch("/api/incidentes");
   const list = Array.isArray(data) ? data : data?.incidentes || [];
   return list.map(normalizeIncidente);
+};
+
+/**
+ * Calcula la distancia geodésica Haversine en kilómetros entre dos coordenadas.
+ */
+const calculateHaversineKm = (lat1, lng1, lat2, lng2) => {
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Number((R * c).toFixed(2));
+};
+
+/**
+ * Obtiene los incidentes cercanos a las coordenadas del ciudadano desde el backend.
+ * Incluye respaldo de cálculo geodésico local en caso de que el servidor remoto
+ * aún no tenga desplegada la ruta /api/incidentes/cercanos.
+ */
+export const getIncidentesCercanos = async ({
+  lat,
+  lng,
+  radio = 10,
+  estado = null,
+  categoriaId = null,
+}) => {
+  const latNum = Number(lat);
+  const lngNum = Number(lng);
+  const radioKm = Number(radio) || 10;
+
+  const params = new URLSearchParams({
+    lat: String(latNum),
+    lng: String(lngNum),
+    radio: String(radioKm),
+  });
+  if (estado && estado !== "TODOS") {
+    params.set("estado", estado);
+  }
+  if (categoriaId && categoriaId !== "TODAS") {
+    params.set("categoria_id", categoriaId);
+  }
+
+  try {
+    const data = await apiFetch(`/api/incidentes/cercanos?${params.toString()}`);
+    const list = Array.isArray(data) ? data : data?.incidentes || [];
+    return list.map(normalizeIncidente);
+  } catch (err) {
+    console.warn(
+      "Respaldo geodésico activado para incidentes cercanos:",
+      err.message
+    );
+    const allIncidents = await getIncidentes();
+    return allIncidents
+      .map((inc) => {
+        const distanceKm = calculateHaversineKm(
+          latNum,
+          lngNum,
+          Number(inc.lat),
+          Number(inc.lng)
+        );
+        return {
+          ...inc,
+          distanceKm,
+          distancia_km: distanceKm,
+        };
+      })
+      .filter((inc) => {
+        if (inc.distanceKm > radioKm) return false;
+        if (estado && estado !== "TODOS" && inc.status !== estado) return false;
+        if (!estado && inc.status === "DESESTIMADO") return false;
+        if (categoriaId && categoriaId !== "TODAS" && inc.categoryId !== categoriaId) {
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => a.distanceKm - b.distanceKm);
+  }
+};
+
+/**
+ * Obtiene el detalle completo de un incidente por su ID, incluyendo su historial de estados.
+ */
+export const getIncidenteById = async (id) => {
+  const data = await apiFetch(`/api/incidentes/${id}`);
+  return normalizeIncidente(data);
 };
 
 /**
@@ -199,7 +302,9 @@ export const updateIncidenteEstado = async (id, { nuevoEstado, motivoDesestimaci
  * Confirma un incidente reportado previamente (Rol Ciudadano).
  */
 export const confirmarIncidente = async (id, { fotoAdicionalUrl } = {}) => {
-  const payload = fotoAdicionalUrl ? { fotoAdicionalUrl } : {};
+  const payload = fotoAdicionalUrl
+    ? { foto_adicional_url: fotoAdicionalUrl }
+    : {};
   const response = await apiFetch(`/api/incidentes/${id}/confirmar`, {
     method: "POST",
     body: JSON.stringify(payload),

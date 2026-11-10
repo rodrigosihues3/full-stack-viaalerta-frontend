@@ -38,6 +38,8 @@ export const LoginPage = () => {
   const [registration, setRegistration] = useState({
     dni: "",
     name: "",
+    nombres: "",
+    apellidos: "",
     email: "",
     password: "",
     confirmPassword: "",
@@ -130,8 +132,8 @@ export const LoginPage = () => {
     try {
       const res = await consultarDniDecolecta(targetDni);
       const nombreCompleto =
-        res?.nombreCompleto ||
         [res?.nombres, res?.apellidos].filter(Boolean).join(" ").trim() ||
+        res?.nombreCompleto ||
         res?.nombres ||
         "";
 
@@ -140,6 +142,8 @@ export const LoginPage = () => {
           ...prev,
           dni: targetDni,
           name: nombreCompleto,
+          nombres: (res.nombres || "").trim(),
+          apellidos: (res.apellidos || "").trim(),
         }));
         setIsNameAutoFilled(true);
         markTouched("name");
@@ -175,7 +179,13 @@ export const LoginPage = () => {
 
   const handleClearDniAutoFill = () => {
     setIsNameAutoFilled(false);
-    setRegistration((prev) => ({ ...prev, dni: "", name: "" }));
+    setRegistration((prev) => ({
+      ...prev,
+      dni: "",
+      name: "",
+      nombres: "",
+      apellidos: "",
+    }));
     setDniNotFound(false);
     setTouchedFields((prev) => ({ ...prev, dni: false, name: false }));
   };
@@ -285,6 +295,8 @@ export const LoginPage = () => {
       await registerCitizen({
         dni: registration.dni,
         name: registration.name,
+        nombres: registration.nombres,
+        apellidos: registration.apellidos,
         email: registration.email,
         password: registration.password,
       });

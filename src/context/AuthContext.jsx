@@ -3,6 +3,8 @@ import {
   login as loginService,
   verify2FA as verify2FAService,
   activate2FA as activate2FAService,
+  getProfile,
+  normalizeUser,
 } from "../services/authServices";
 import { disconnectSocket } from "../services/socketService";
 
@@ -14,7 +16,7 @@ export const AuthProvider = ({ children }) => {
     const storedUser = localStorage.getItem("via_alerta_user");
     if (!storedUser) return null;
     try {
-      return JSON.parse(storedUser);
+      return normalizeUser(JSON.parse(storedUser));
     } catch {
       localStorage.removeItem("via_alerta_token");
       localStorage.removeItem("via_alerta_user");
@@ -32,6 +34,38 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem("via_alerta_token");
     localStorage.removeItem("via_alerta_user");
   }, []);
+
+  const refreshProfile = useCallback(async () => {
+    if (!localStorage.getItem("via_alerta_token")) return null;
+    try {
+      const freshUser = await getProfile();
+      if (freshUser) {
+        setUser(freshUser);
+        localStorage.setItem("via_alerta_user", JSON.stringify(freshUser));
+      }
+      return freshUser;
+    } catch (err) {
+      console.warn("No se pudo sincronizar el perfil con el servidor:", err.message);
+      return null;
+    }
+  }, []);
+
+  // Sincronizar datos reales del usuario (incluyendo DNI desde Supabase) cuando hay sesión activa
+  useEffect(() => {
+    if (!token) return;
+    let active = true;
+    getProfile()
+      .then((freshUser) => {
+        if (active && freshUser) {
+          setUser(freshUser);
+          localStorage.setItem("via_alerta_user", JSON.stringify(freshUser));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [token]);
 
   useEffect(() => {
     const handleUnauthorized = () => {
@@ -108,6 +142,7 @@ export const AuthProvider = ({ children }) => {
         logout,
         marcar2FAActivo,
         activar2FA,
+        refreshProfile,
       }}
     >
       {children}
