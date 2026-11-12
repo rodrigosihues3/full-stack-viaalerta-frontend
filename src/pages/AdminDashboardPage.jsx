@@ -10,12 +10,14 @@ import {
   crearEntidad,
   actualizarEntidad,
   cambiarEstadoEntidad,
+  createOperador,
 } from "../services/adminService";
 import {
   Building2,
   Users,
   UserCheck,
   UserX,
+  UserPlus,
   Activity,
   Search,
   Filter,
@@ -41,6 +43,8 @@ import {
   FileText,
   ChevronDown,
   Check,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
 // Datos de contingencia inicial para garantizar operatividad continua
@@ -227,6 +231,7 @@ export const AdminDashboardPage = () => {
   const [editingEntity, setEditingEntity] = useState(null);
   const [notifyModalOpen, setNotifyModalOpen] = useState(false);
   const [targetUser, setTargetUser] = useState(null);
+  const [isCreateOperatorOpen, setIsCreateOperatorOpen] = useState(false);
 
   // Mensaje flotante de feedback
   const [toast, setToast] = useState(null);
@@ -547,6 +552,74 @@ export const AdminDashboardPage = () => {
       console.error("Error al notificar al usuario:", err);
       showToast("No fue posible despachar la advertencia.", "error");
     }
+  };
+
+  const handleCreateOperator = async (payload) => {
+    const nuevoOperador = await createOperador(payload);
+
+    try {
+      const [usuariosRes, metricasRes] = await Promise.allSettled([
+        getUsuariosAdmin(),
+        getMetricasAdmin(),
+      ]);
+
+      if (usuariosRes.status === "fulfilled" && Array.isArray(usuariosRes.value)) {
+        setUsers(
+          usuariosRes.value.map((u) => ({
+            ...u,
+            id: u.id || u._id,
+            dni: u.dni || "00000000",
+            nombres: u.nombres || u.name || "Usuario",
+            apellidos: u.apellidos || "",
+            email: u.email,
+            rol: u.rol || u.role || "CIUDADANO",
+            activo: u.activo ?? true,
+            entidad_id: u.entidad_id,
+            entidad_nombre: u.entidad_nombre,
+            fiabilidad_pct:
+              typeof u.fiabilidad_pct === "number"
+                ? u.fiabilidad_pct
+                : u.rol === "CIUDADANO"
+                  ? 85
+                  : null,
+            total_reportes: u.total_reportes ?? 0,
+          }))
+        );
+      } else if (nuevoOperador) {
+        setUsers((prev) => [
+          {
+            ...nuevoOperador,
+            id: nuevoOperador.id,
+            dni: nuevoOperador.dni,
+            nombres: nuevoOperador.nombres,
+            apellidos: nuevoOperador.apellidos,
+            email: nuevoOperador.email,
+            rol: nuevoOperador.rol || "OPERADOR_ENTIDAD",
+            activo: nuevoOperador.activo ?? true,
+            entidad_id: nuevoOperador.entidad_id,
+            entidad_nombre: nuevoOperador.entidad_nombre,
+            fiabilidad_pct: null,
+            total_reportes: 0,
+          },
+          ...prev,
+        ]);
+      }
+
+      if (metricasRes.status === "fulfilled" && metricasRes.value) {
+        setMetricas(metricasRes.value);
+      } else {
+        setMetricas((prev) =>
+          prev
+            ? { ...prev, total_operadores: (prev.total_operadores || 0) + 1 }
+            : prev
+        );
+      }
+    } catch (refreshErr) {
+      console.warn("Advertencia al sincronizar tras crear operador:", refreshErr);
+    }
+
+    showToast("Operador técnico aprovisionado exitosamente.");
+    setIsCreateOperatorOpen(false);
   };
 
   // Determinación de borde superior cromático para Usuarios
@@ -1262,6 +1335,15 @@ export const AdminDashboardPage = () => {
 
                   {/* Filtro por rol y conmutador Cards/Tabla */}
                   <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setIsCreateOperatorOpen(true)}
+                      className="flex shrink-0 items-center gap-1.5 rounded-lg bg-[#081D30] px-3.5 py-2 text-xs font-bold text-white shadow-2xs transition hover:bg-slate-800 cursor-pointer"
+                    >
+                      <UserPlus size={15} />
+                      <span>+ Crear Operador Técnico</span>
+                    </button>
+
                     <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs text-slate-600">
                       <Filter size={14} className="text-slate-400" />
                       <select
@@ -1754,6 +1836,18 @@ export const AdminDashboardPage = () => {
           showToast("Configuración de seguridad 2FA actualizada correctamente.");
         }}
       />
+
+      {/* ========================================================= */}
+      {/* MODAL 4: CREACIÓN DE OPERADOR TÉCNICO                     */}
+      {/* ========================================================= */}
+      {isCreateOperatorOpen && (
+        <CreateOperatorModal
+          isOpen={isCreateOperatorOpen}
+          entities={entities}
+          onClose={() => setIsCreateOperatorOpen(false)}
+          onSave={handleCreateOperator}
+        />
+      )}
     </div>
   );
 };
@@ -2179,6 +2273,7 @@ const EntityFormModal = ({ isOpen, initialData, onClose, onSave }) => {
   );
 };
 
+
 /**
  * Modal de Advertencia / Notificación a Usuarios con validaciones estrictas.
  */
@@ -2433,6 +2528,421 @@ const NotificationModal = ({ isOpen, user, onClose, onSend }) => {
                 <>
                   <Send size={14} />
                   <span>Emitir Notificación</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Modal de Creación de Operador Técnico con diseño B2B sobrio y validaciones institucionales.
+ */
+const CreateOperatorModal = ({ isOpen, entities, onClose, onSave }) => {
+  const [formData, setFormData] = useState({
+    nombres: "",
+    apellidos: "",
+    dni: "",
+    email: "",
+    password: "",
+    entidad_id: "",
+  });
+
+  const [showPassword, setShowPassword] = useState(false);
+  const [touched, setTouched] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+
+  const resetForm = () => {
+    setFormData({
+      nombres: "",
+      apellidos: "",
+      dni: "",
+      email: "",
+      password: "",
+      entidad_id: "",
+    });
+    setTouched({});
+    setSubmitError("");
+    setShowPassword(false);
+  };
+
+  const handleClose = () => {
+    if (!submitting) {
+      resetForm();
+      onClose();
+    }
+  };
+
+  const errors = useMemo(() => {
+    const errs = {};
+
+    if (!formData.nombres.trim()) {
+      errs.nombres = "Los nombres son obligatorios.";
+    } else if (formData.nombres.trim().length < 2) {
+      errs.nombres = "Debe ingresar al menos 2 caracteres.";
+    }
+
+    if (!formData.apellidos.trim()) {
+      errs.apellidos = "Los apellidos son obligatorios.";
+    } else if (formData.apellidos.trim().length < 2) {
+      errs.apellidos = "Debe ingresar al menos 2 caracteres.";
+    }
+
+    if (!formData.dni.trim()) {
+      errs.dni = "El DNI institucional es obligatorio.";
+    } else if (!/^\d{8}$/.test(formData.dni.trim())) {
+      errs.dni = "El DNI debe contener exactamente 8 dígitos numéricos.";
+    }
+
+    if (!formData.email.trim()) {
+      errs.email = "El correo institucional es obligatorio.";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
+      errs.email = "Ingrese un correo institucional válido.";
+    }
+
+    if (!formData.password) {
+      errs.password = "La contraseña temporal es obligatoria.";
+    } else if (formData.password.length < 6) {
+      errs.password = "La contraseña debe tener al menos 6 caracteres.";
+    }
+
+    if (!formData.entidad_id) {
+      errs.entidad_id = "Debe seleccionar una entidad pública adscrita.";
+    }
+
+    return errs;
+  }, [formData]);
+
+  const hasEntities = Array.isArray(entities) && entities.length > 0;
+  const isFormValid = Object.keys(errors).length === 0 && hasEntities;
+
+  if (!isOpen) return null;
+
+  const handleBlur = (field) => {
+    setTouched((prev) => ({ ...prev, [field]: true }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setTouched({
+      nombres: true,
+      apellidos: true,
+      dni: true,
+      email: true,
+      password: true,
+      entidad_id: true,
+    });
+
+    if (!isFormValid || submitting) return;
+
+    setSubmitting(true);
+    setSubmitError("");
+
+    try {
+      const parsedEntidadId = isNaN(Number(formData.entidad_id))
+        ? formData.entidad_id
+        : Number(formData.entidad_id);
+
+      await onSave({
+        nombres: formData.nombres.trim(),
+        apellidos: formData.apellidos.trim(),
+        dni: formData.dni.trim(),
+        email: formData.email.trim().toLowerCase(),
+        password: formData.password,
+        entidad_id: parsedEntidadId,
+      });
+
+      resetForm();
+    } catch (err) {
+      const msg =
+        err?.message ||
+        err?.data?.error ||
+        err?.data?.mensaje ||
+        "Ocurrió un error al intentar aprovisionar el operador técnico.";
+      setSubmitError(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs transition-opacity animate-in fade-in"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !submitting) handleClose();
+      }}
+    >
+      <div className="relative w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl border border-slate-200">
+        {/* Cabecera B2B */}
+        <div className="flex items-center justify-between border-b border-slate-100 bg-[#081D30] px-5 py-4 text-white">
+          <div className="flex items-center gap-2.5">
+            <div className="rounded-lg bg-blue-600/30 p-2 text-blue-400 border border-blue-500/30">
+              <UserPlus size={20} />
+            </div>
+            <div>
+              <h2 className="text-sm sm:text-base font-bold tracking-tight text-white">
+                Aprovisionamiento de Operador Técnico
+              </h2>
+              <p className="text-[11px] text-slate-300">
+                Asignación de credenciales operativas e interoperabilidad institucional
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleClose}
+            disabled={submitting}
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition cursor-pointer"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Formulario */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[85vh] overflow-y-auto">
+          {!hasEntities && (
+            <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 animate-in fade-in">
+              <AlertTriangle size={16} className="shrink-0 text-amber-600 mt-0.5" />
+              <span>
+                No existen entidades públicas registradas en el sistema. Registre una entidad adscrita antes de aprovisionar un operador técnico.
+              </span>
+            </div>
+          )}
+
+          {submitError && (
+            <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700 animate-in fade-in">
+              <AlertTriangle size={15} className="shrink-0 text-red-600 mt-0.5" />
+              <span>{submitError}</span>
+            </div>
+          )}
+
+          {/* Nombres y Apellidos */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Nombres *
+              </label>
+              <input
+                type="text"
+                required
+                value={formData.nombres}
+                onBlur={() => handleBlur("nombres")}
+                onChange={(e) => {
+                  setFormData((prev) => ({ ...prev, nombres: e.target.value }));
+                  if (touched.nombres) setSubmitError("");
+                }}
+                placeholder="Ej. Carlos Alberto"
+                className={`w-full rounded-xl border px-3.5 py-2 text-xs text-slate-800 outline-none transition focus:ring-1 ${
+                  touched.nombres && errors.nombres
+                    ? "border-red-300 bg-red-50/20 focus:border-red-500 focus:ring-red-200"
+                    : "border-slate-300 bg-white focus:border-blue-600 focus:ring-blue-600"
+                }`}
+              />
+              {touched.nombres && errors.nombres && (
+                <p className="mt-1 text-[11px] text-red-600 font-medium">
+                  {errors.nombres}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Apellidos *
+              </label>
+              <input
+                type="text"
+                required
+                value={formData.apellidos}
+                onBlur={() => handleBlur("apellidos")}
+                onChange={(e) => {
+                  setFormData((prev) => ({ ...prev, apellidos: e.target.value }));
+                  if (touched.apellidos) setSubmitError("");
+                }}
+                placeholder="Ej. Mendoza Ramos"
+                className={`w-full rounded-xl border px-3.5 py-2 text-xs text-slate-800 outline-none transition focus:ring-1 ${
+                  touched.apellidos && errors.apellidos
+                    ? "border-red-300 bg-red-50/20 focus:border-red-500 focus:ring-red-200"
+                    : "border-slate-300 bg-white focus:border-blue-600 focus:ring-blue-600"
+                }`}
+              />
+              {touched.apellidos && errors.apellidos && (
+                <p className="mt-1 text-[11px] text-red-600 font-medium">
+                  {errors.apellidos}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* DNI Institucional */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              DNI (8 dígitos) *
+            </label>
+            <input
+              type="text"
+              required
+              maxLength={8}
+              inputMode="numeric"
+              value={formData.dni}
+              onBlur={() => handleBlur("dni")}
+              onChange={(e) => {
+                const numOnly = e.target.value.replace(/\D/g, "").slice(0, 8);
+                setFormData((prev) => ({ ...prev, dni: numOnly }));
+                if (touched.dni) setSubmitError("");
+              }}
+              placeholder="Ej. 45678901"
+              className={`w-full rounded-xl border px-3.5 py-2 text-xs font-mono font-bold text-slate-800 outline-none transition focus:ring-1 ${
+                touched.dni && errors.dni
+                  ? "border-red-300 bg-red-50/20 focus:border-red-500 focus:ring-red-200"
+                  : "border-slate-300 bg-white focus:border-blue-600 focus:ring-blue-600"
+              }`}
+            />
+            {touched.dni && errors.dni && (
+              <p className="mt-1 text-[11px] text-red-600 font-medium">
+                {errors.dni}
+              </p>
+            )}
+          </div>
+
+          {/* Correo Institucional */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Correo Institucional *
+            </label>
+            <input
+              type="email"
+              required
+              value={formData.email}
+              onBlur={() => handleBlur("email")}
+              onChange={(e) => {
+                setFormData((prev) => ({ ...prev, email: e.target.value }));
+                if (touched.email) setSubmitError("");
+              }}
+              placeholder="operaciones.miraflores@munimiraflores.gob.pe"
+              className={`w-full rounded-xl border px-3.5 py-2 text-xs text-slate-800 outline-none transition focus:ring-1 ${
+                touched.email && errors.email
+                  ? "border-red-300 bg-red-50/20 focus:border-red-500 focus:ring-red-200"
+                  : "border-slate-300 bg-white focus:border-blue-600 focus:ring-blue-600"
+              }`}
+            />
+            {touched.email && errors.email && (
+              <p className="mt-1 text-[11px] text-red-600 font-medium">
+                {errors.email}
+              </p>
+            )}
+          </div>
+
+          {/* Contraseña Temporal */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Contraseña Temporal (mínimo 6 caracteres) *
+            </label>
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                required
+                value={formData.password}
+                onBlur={() => handleBlur("password")}
+                onChange={(e) => {
+                  setFormData((prev) => ({ ...prev, password: e.target.value }));
+                  if (touched.password) setSubmitError("");
+                }}
+                placeholder="••••••••"
+                className={`w-full rounded-xl border py-2 pl-3.5 pr-10 text-xs text-slate-800 outline-none transition focus:ring-1 ${
+                  touched.password && errors.password
+                    ? "border-red-300 bg-red-50/20 focus:border-red-500 focus:ring-red-200"
+                    : "border-slate-300 bg-white focus:border-blue-600 focus:ring-blue-600"
+                }`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                title={showPassword ? "Ocultar contraseña" : "Ver contraseña"}
+              >
+                {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </div>
+            {touched.password && errors.password && (
+              <p className="mt-1 text-[11px] text-red-600 font-medium">
+                {errors.password}
+              </p>
+            )}
+          </div>
+
+          {/* Entidad Pública Asignada */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Entidad Pública Asignada *
+            </label>
+            <div className="relative">
+              <select
+                required
+                disabled={!hasEntities}
+                value={formData.entidad_id}
+                onBlur={() => handleBlur("entidad_id")}
+                onChange={(e) => {
+                  setFormData((prev) => ({ ...prev, entidad_id: e.target.value }));
+                  if (touched.entidad_id) setSubmitError("");
+                }}
+                className={`w-full appearance-none rounded-xl border py-2 pl-3.5 pr-9 text-xs text-slate-800 outline-none transition focus:ring-1 cursor-pointer disabled:bg-slate-100 disabled:cursor-not-allowed ${
+                  touched.entidad_id && errors.entidad_id
+                    ? "border-red-300 bg-red-50/20 focus:border-red-500 focus:ring-red-200"
+                    : "border-slate-300 bg-white focus:border-blue-600 focus:ring-blue-600"
+                }`}
+              >
+                <option value="">-- Seleccione una entidad adscrita --</option>
+                {entities.map((ent) => {
+                  const idVal = ent.id ?? ent._id;
+                  const sigla = ent.sigla || ent.acronym || "ENT";
+                  const nombre = ent.nombre_oficial || ent.nombre || ent.name || "Entidad Pública";
+                  const isActiva = ent.activa !== false;
+                  return (
+                    <option key={idVal} value={idVal} disabled={!isActiva}>
+                      {sigla} - {nombre} {!isActiva ? "(Inactiva)" : ""}
+                    </option>
+                  );
+                })}
+              </select>
+              <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                <ChevronDown size={14} />
+              </div>
+            </div>
+            {touched.entidad_id && errors.entidad_id && (
+              <p className="mt-1 text-[11px] text-red-600 font-medium">
+                {errors.entidad_id}
+              </p>
+            )}
+          </div>
+
+          {/* Footer de Acciones */}
+          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={handleClose}
+              disabled={submitting}
+              className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={submitting || !isFormValid}
+              className="flex items-center gap-2 rounded-xl bg-[#081D30] px-4 py-2 text-xs font-bold text-white shadow-2xs hover:bg-slate-800 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" />
+                  <span>Aprovisionando...</span>
+                </>
+              ) : (
+                <>
+                  <UserPlus size={14} />
+                  <span>Aprovisionar Operador</span>
                 </>
               )}
             </button>

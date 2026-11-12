@@ -90,3 +90,16 @@ export const cambiarEstadoEntidad = async (id, activa) => {
   return data?.entidad || data;
 };
 
+/**
+ * Aprovisiona un nuevo operador técnico adscrito a una entidad pública.
+ * @param {Object} payload - { nombres, apellidos, dni, email, password, entidad_id }
+ */
+export const createOperador = async (payload) => {
+  const data = await apiFetch("/api/admin/operadores", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  return data?.operador || data?.usuario || data;
+};
+
+
